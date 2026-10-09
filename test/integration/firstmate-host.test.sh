@@ -17,6 +17,11 @@ REPO=$(cd "$(dirname "$0")/../.." && pwd -P)
 HOST="$FIRSTMATE_ROOT/bin/fm-extension.sh"
 PROCEVENT="$FIRSTMATE_ROOT/bin/fm-procevent.sh"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/fca-host.XXXXXX")
+if git -C "$TMP" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  rm -rf "$TMP"
+  echo "FAIL: $TMP is inside a Git work tree, where Firstmate refuses to bind; set TMPDIR to a directory outside any Git work tree" >&2
+  exit 1
+fi
 cleanup() {
   FM_HOME="$TMP/home" "$PROCEVENT" sweep-home >/dev/null 2>&1 || true
   chmod -R u+w "$TMP" 2>/dev/null || true

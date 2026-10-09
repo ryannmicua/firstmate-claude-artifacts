@@ -28,7 +28,7 @@ The package uses Node.js because the host itself runs on Node.js and puts the No
 The check session is a transport, not a judge.
 It runs with no built-in tools, no user settings or hooks, no skills, and only the read-only Claude Docs `read` and `query` tools; the write tools are explicitly denied.
 The adapter reads the raw tool results from the session's stream-json transcript and builds every row itself.
-A query result counts only when its recorded input names the configured doc and a tab of it and does not skip past the cursor, so a model that is confused, or steered by a hostile comment, can at worst fail the check; it cannot invent, hide, or reorder rows.
+A query result counts only when its recorded input names the configured doc and one of its tabs, uses project container kind, sets `afterSeq` exactly to that tab's committed cursor (0 for a new tab), and uses the prescribed limit of 100. A mismatch leaves the tab unchecked, so a confused model can at worst fail the check; it cannot silently skip rows, invent, hide, or reorder them.
 
 Comment text is untrusted twice over: the session's prompt says so, and the result presents it as JSON string data under a fixed notice, with control characters replaced and invisible or direction-changing characters made visible.
 

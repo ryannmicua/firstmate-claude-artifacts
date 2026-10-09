@@ -286,6 +286,33 @@ test("a query that skips rows past the cursor does not count as checked", () => 
   assert.deepEqual(box.readState().cursors, {});
 });
 
+test("a query below the committed cursor is rejected and a correct retry finds newer comments", () => {
+  const box = sandbox({ rows: [row(TAB1, 500, "baseline")] });
+  const initial = poll(box, rid("1"));
+  resultOp(box, "result.terminal", initial.json.result.output);
+
+  const olderRows = Array.from({ length: 100 }, (_, index) => row(TAB1, index + 1, `old ${index + 1}`));
+  const rows = [...olderRows, row(TAB1, 501, "new comment")];
+  box.setScenario({ mode: "low-after-seq", rows, truncate: 100 });
+  box.makeDue();
+  silent(poll(box, rid("2"), "&failures=3"));
+  assert.equal(box.readState().failures, 1);
+  assert.deepEqual(box.readState().cursors, { [TAB1]: 500 });
+
+  box.setScenario({ rows, truncate: 100 });
+  box.makeDue();
+  assert.deepEqual(announced(poll(box, rid("3"), "&failures=3")).rows.map((item) => item.body), ["new comment"]);
+});
+
+for (const mode of ["wrong-container-kind", "wrong-limit"]) {
+  test(`a query with ${mode} is not counted as checked`, () => {
+    const box = sandbox({ mode, rows: [row(TAB1, 5, "x")] });
+    silent(poll(box, rid("1"), "&failures=3"));
+    assert.equal(box.readState().failures, 1);
+    assert.deepEqual(box.readState().cursors, {});
+  });
+}
+
 test("a tab the session skipped stays unchecked and keeps its cursor", () => {
   const box = sandbox({ mode: "skip-tab", tabs: [{ id: TAB1, name: "Plan" }, { id: TAB2, name: "Notes" }], rows: [row(TAB1, 5, "a"), row(TAB2, 6, "b")] });
   const result = announced(poll(box, rid("1")));

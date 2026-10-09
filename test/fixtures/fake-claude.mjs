@@ -8,8 +8,10 @@
 // scenario.json:
 //   { "doc": "<doc id>", "title": "...", "tabs": [{"id","name"}],
 //     "rows": [{"tab": "<tab id>", ...Docs utterance row...}],
-//     "mode": "ok" | "no-read" | "skip-tab" | "high-after-seq" | "deny"
-//           | "exit" | "hang" | "error-result" | "flaky",
+//     "mode": "ok" | "no-read" | "skip-tab" | "high-after-seq"
+//           | "low-after-seq" | "wrong-container-kind" | "wrong-limit"
+//           | "parse-failure-with-content" | "deny" | "exit" | "hang"
+//           | "error-result" | "flaky",
 //     "truncate": <max rows per query, optional> }
 
 import { appendFileSync, readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -74,15 +76,22 @@ if (effectiveMode !== "no-read" && effectiveMode !== "parse-failure-with-content
       if (effectiveMode === "skip-tab" && index === scenario.tabs.length - 1) return;
       let afterSeq = Object.hasOwn(cursors, tab.id) ? cursors[tab.id] : fallback;
       if (effectiveMode === "high-after-seq") afterSeq += 1000;
-      const queryId = toolUse("mcp__claude_ai_Claude_Docs__query", {
+      if (effectiveMode === "low-after-seq") afterSeq = 0;
+      const queryInput = {
         object: "utterance",
-        container: { kind: "project", id: scenario.doc },
-        payload: { under: { object: "file", id: tab.id }, afterSeq, limit: 100 },
-      });
+        container: { kind: effectiveMode === "wrong-container-kind" ? "file" : "project", id: scenario.doc },
+        payload: {
+          under: { object: "file", id: tab.id },
+          afterSeq,
+          limit: effectiveMode === "wrong-limit" ? 99 : 100,
+        },
+      };
+      const queryId = toolUse("mcp__claude_ai_Claude_Docs__query", queryInput);
       let rows = scenario.rows.filter((row) => row.tab === tab.id && row.seq > afterSeq).map(({ tab: _tab, ...row }) => row);
       let truncated = false;
-      if (scenario.truncate && rows.length > scenario.truncate) {
-        rows = rows.slice(0, scenario.truncate);
+      const maxRows = Math.min(queryInput.payload.limit, scenario.truncate || Number.MAX_SAFE_INTEGER);
+      if (rows.length > maxRows) {
+        rows = rows.slice(0, maxRows);
         truncated = true;
       }
       const body = JSON.stringify({ verdict: "allow", rows, ...(truncated ? { truncated: true } : {}) });

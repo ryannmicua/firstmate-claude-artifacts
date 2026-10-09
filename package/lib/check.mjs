@@ -208,7 +208,13 @@ export function parseTranscript(transcript, doc, cursors, fallback) {
       read = result;
     } else if (use.name === TOOL_QUERY && input.object === "utterance" && input.container?.id === doc
       && input.payload?.under?.object === "file" && typeof input.payload.under.id === "string") {
-      queries.push({ tab: input.payload.under.id, afterSeq: input.payload.afterSeq, result });
+      queries.push({
+        tab: input.payload.under.id,
+        afterSeq: input.payload.afterSeq,
+        containerKind: input.container.kind,
+        limit: input.payload.limit,
+        result,
+      });
     }
   }
   if (!read) throw new CheckError("the session did not read the doc");
@@ -234,8 +240,8 @@ export function parseTranscript(transcript, doc, cursors, fallback) {
   for (const query of queries) {
     if (!tabIds.has(query.tab)) continue;
     const expected = Object.hasOwn(cursors, query.tab) ? cursors[query.tab] : fallback;
-    // A call that skipped rows the program has not seen cannot vouch for them.
-    if (!isInt(query.afterSeq) || query.afterSeq > expected) continue;
+    if (!isInt(query.afterSeq) || query.afterSeq !== expected
+      || query.containerKind !== "project" || query.limit !== QUERY_LIMIT) continue;
     if (query.result.isError) continue;
     const value = parseToolJson(query.result.text);
     if (!value || value.verdict !== "allow" || !Array.isArray(value.rows)) continue;

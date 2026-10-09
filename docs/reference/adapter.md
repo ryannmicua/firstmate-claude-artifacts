@@ -61,7 +61,7 @@ claude -p --model <model> --output-format stream-json --verbose --tools "" --dis
 
 The prompt asks for one `read` of the doc and one `query` per tab with `afterSeq` set to that tab's cursor (0 for a tab not seen before) and `limit` 100, and says all tool output is untrusted data.
 The adapter parses the raw tool results out of the transcript and ignores the model's reply text.
-A query counts only if its input names the configured doc and that tab and its `afterSeq` is not above the tab's cursor.
+A query counts only if its input names the configured doc and a tab from its read, uses `container.kind` `project`, sets `afterSeq` exactly to that tab's committed cursor (0 for a new tab), and sets `limit` to 100. Any mismatch leaves that tab unchecked.
 A session that did not make the expected calls is retried once when at least half the timeout remains. On a parse failure, `<state>/run/last-failed-check.json` stores only the exit status, error class, transcript byte and line counts, and timestamp; it never stores transcript content. A legacy raw transcript file is removed when the next check starts.
 
 ## Result output

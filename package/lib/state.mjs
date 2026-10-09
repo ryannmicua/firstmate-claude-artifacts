@@ -37,7 +37,6 @@ export function freshState(sourceId, doc) {
     schema: STATE_SCHEMA,
     source_id: sourceId,
     doc,
-    initialized: false,
     cursors: {},
     last_check_at: 0,
     due_now: false,

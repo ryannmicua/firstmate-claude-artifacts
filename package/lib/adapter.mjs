@@ -8,7 +8,7 @@
 // only for a captured result. A pending result that never comes back is
 // discarded on the next poll and its comments are read again.
 
-import { writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { ConfigError, parseConfigRef } from "./config.mjs";
 import { buildPrompt, CheckError, claudeArgs, findClaude, parseTranscript, runClaude } from "./check.mjs";
@@ -36,8 +36,9 @@ function dueAt(state, config) {
 // Run one check session, retrying once within the same time budget when the
 // model did not make the expected calls (an occasional low-cost-model slip).
 async function checkOnce(config, cursorsBefore, env, clock) {
-  const binary = findClaude(config, env);
   const runDir = path.join(stateRoot(env), "run");
+  rmSync(path.join(runDir, "last-failed-transcript.jsonl"), { force: true });
+  const binary = findClaude(config, env);
   const budgetMs = config.timeout * 1000;
   const started = clock.now();
   for (let attempt = 1; ; attempt += 1) {
@@ -52,8 +53,15 @@ async function checkOnce(config, cursorsBefore, env, clock) {
     try {
       return parseTranscript(transcript, config.doc, cursorsBefore, FALLBACK_CURSOR);
     } catch (error) {
-      // Keep the failed session's transcript privately for diagnosis.
-      writeFileSync(path.join(runDir, "last-failed-transcript.jsonl"), transcript, { mode: 0o600 });
+      const separators = transcript.match(/\r\n|\r|\n/g) || [];
+      const lineCount = transcript.length === 0 ? 0 : separators.length + (/(?:\r\n|\r|\n)$/.test(transcript) ? 0 : 1);
+      writeFileSync(path.join(runDir, "last-failed-check.json"), `${JSON.stringify({
+        exit_status: 0,
+        error_class: error?.constructor?.name || "Error",
+        byte_count: Buffer.byteLength(transcript, "utf8"),
+        line_count: lineCount,
+        timestamp: new Date(clock.now()).toISOString(),
+      })}\n`, { mode: 0o600 });
       const elapsed = clock.now() - started;
       if (error.permanent || attempt >= 2 || elapsed * 2 > budgetMs) throw error;
       log(`check attempt ${attempt} failed (${error.message}); retrying once`);
@@ -127,12 +135,10 @@ export async function poll(request, { env = process.env, clock = realClock } = {
     parsed,
     cursorsBefore,
     fallback: FALLBACK_CURSOR,
-    authors: config.authors,
     checkedAt,
-    recordOnly: !state.initialized && config.start === "latest",
   });
   store.update((current) => {
-    const next = { ...current, initialized: true, failures: 0, last_check_at: clock.now(), due_now: built.more };
+    const next = { ...current, failures: 0, last_check_at: clock.now(), due_now: built.more };
     if (built.announced) {
       next.pending = { request_id: requestId, output: built.output, cursors_after: built.cursorsAfter, created_at: checkedAt };
     } else {

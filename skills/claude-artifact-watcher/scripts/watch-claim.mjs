@@ -4,6 +4,7 @@
 
 import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const SCHEMA = "firstmate-claude-artifacts.watch-claim.v1";
 const DIR_NAME = "fca-watch-claims";
@@ -16,11 +17,8 @@ const HELP = `watch-claim: advisory per-page watch claims for Claude artifact wa
 
 Usage:
   watch-claim.mjs claim <page>... [--task <id>] [--home <dir>]
-  watch-claim.mjs release <page>... [--task <id>] [--home <dir>]
   watch-claim.mjs release-task [--task <id>] [--home <dir>]
-  watch-claim.mjs check <page> [--task <id>] [--home <dir>]
   watch-claim.mjs list [--home <dir>]
-  watch-claim.mjs sweep [--home <dir>]
 
 <page> is a claude.ai artifact or doc link (claude.ai/artifact/<id>,
 claude.ai/code/artifact/[<title>-]<id>) or the bare id. A page can be known
@@ -31,19 +29,15 @@ claim         Take the page(s) for the task. Same task again: kept (a relaunch
               keeps its claim). Another live task holds it: refused, exit 3,
               and the caller must not publish or watch that page. A holder
               whose task no longer exists in the home is stale: taken over.
-release       Drop the task's claim on the page(s). A claim held by another
-              task is not touched (exit 3).
 release-task  Drop every claim the task holds (run at task cleanup).
-check         Report the holder; exit 3 when another live task holds it.
 list          Show every claim: page, holder, live or stale, since.
-sweep         Remove claims whose task no longer exists.
 
 Task: --task, else FM_TASK_ID. Home: --home, else FM_HOME, else the home that
 contains FM_TASK_INBOX (<home>/state/<task>.inbox). State directory:
 FM_STATE_OVERRIDE when set, else <home>/state. A task is live while
 <state>/<task>.meta exists. Claims live in <state>/${DIR_NAME}/.
 
-Claims are advisory. They bind only sessions that run this check before they
+Claims are advisory. They bind only sessions that run this tool before they
 publish or watch: the captain's own sessions, other tools, and other Firstmate
 homes do not see or honor them.
 `;
@@ -222,26 +216,6 @@ export function run(argv, env = process.env, out = (line) => process.stdout.writ
         return 0;
       });
     }
-    case "release": {
-      if (positional.length === 0) throw new UsageError("release needs at least one page");
-      const task = resolveTask(options, env);
-      return withLock(dir, () => {
-        let status = 0;
-        for (const key of new Set(positional.map(pageKey))) {
-          const file = claimFile(dir, key);
-          const current = readClaim(file);
-          if (!current) out(`not-held: ${key}`);
-          else if (current.task === task) {
-            unlinkSync(file);
-            out(`released: ${key} by ${task}`);
-          } else {
-            out(`refused: ${key} is held by ${current.task || "(unreadable claim)"}, not ${task}`);
-            status = EXIT_REFUSED;
-          }
-        }
-        return status;
-      });
-    }
     case "release-task": {
       const task = resolveTask(options, env);
       return withLock(dir, () => {
@@ -256,26 +230,6 @@ export function run(argv, env = process.env, out = (line) => process.stdout.writ
         return 0;
       });
     }
-    case "check": {
-      if (positional.length !== 1) throw new UsageError("check needs exactly one page");
-      const task = resolveTask(options, env);
-      const key = pageKey(positional[0]);
-      const current = readClaim(claimFile(dir, key));
-      if (!current) {
-        out(`free: ${key}`);
-        return 0;
-      }
-      if (current.task === task) {
-        out(`held-by-you: ${key} by ${task} since ${current.claimed_at}`);
-        return 0;
-      }
-      if (!current.corrupt && taskLive(state, current.task)) {
-        out(`held: ${key} by live task ${current.task} since ${current.claimed_at}`);
-        return EXIT_REFUSED;
-      }
-      out(`stale: ${key} held by ${current.task || "(unreadable claim)"}, which no longer exists; claim takes it over`);
-      return 0;
-    }
     case "list": {
       const claims = allClaims(dir);
       if (claims.length === 0) {
@@ -289,25 +243,12 @@ export function run(argv, env = process.env, out = (line) => process.stdout.writ
       }
       return 0;
     }
-    case "sweep": {
-      return withLock(dir, () => {
-        let count = 0;
-        for (const claim of allClaims(dir)) {
-          if (!claim.corrupt && taskLive(state, claim.task)) continue;
-          unlinkSync(claimFile(dir, claim.page));
-          out(`swept: ${claim.page} from ${claim.task || "(unreadable claim)"}`);
-          count += 1;
-        }
-        if (count === 0) out("none: no stale claims");
-        return 0;
-      });
-    }
     default:
       throw new UsageError(`unknown command ${JSON.stringify(command)}; run with --help`);
   }
 }
 
-const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname);
+const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 if (invokedDirectly) {
   try {
     process.exitCode = run(process.argv.slice(2));

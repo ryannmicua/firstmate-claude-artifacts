@@ -16,8 +16,6 @@ export const DEFAULTS = Object.freeze({
   wait: 50,
   timeout: 120,
   budget: 0.05,
-  start: "all",
-  authors: "people",
   failures: 3,
   claude: "",
 });
@@ -77,14 +75,6 @@ export function parseConfigRef(reference) {
             throw new ConfigError("budget must be a dollar amount above 0 and at most 5");
           }
           config.budget = Number(raw);
-          break;
-        case "start":
-          if (raw !== "all" && raw !== "latest") throw new ConfigError("start must be all or latest");
-          config.start = raw;
-          break;
-        case "authors":
-          if (raw !== "people" && raw !== "all") throw new ConfigError("authors must be people or all");
-          config.authors = raw;
           break;
         case "claude":
           if (!path.isAbsolute(raw) || path.normalize(raw) !== raw || /[\0\n\r]/.test(raw)) {

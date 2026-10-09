@@ -33,7 +33,7 @@ The worker is always a Claude Code worker, dedicated to one page.
 node ~/.claude/skills/claude-artifact-watcher/scripts/watch-claim.mjs list --home <firstmate home>
 ```
 
-A `stale` row means its task no longer exists in that home; the next watcher takes it over, or clear it with `sweep`.
+A `stale` row means its task no longer exists in that home; the next watcher takes it over when it claims the page.
 At task cleanup, release a finished task's claims with `watch-claim.mjs release-task --task <task-id> --home <firstmate home>`.
 
 ## If the worker restarts

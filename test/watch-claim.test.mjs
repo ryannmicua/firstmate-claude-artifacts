@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { DOC, ROOT, tempDir } from "./helpers.mjs";
@@ -28,7 +28,7 @@ test("the first task claims a page and a second live task is refused", () => {
   const refused = claim(["claim", DOC, "--task", "task-b"], { FM_HOME: h });
   assert.equal(refused.status, 3);
   assert.match(refused.out, /refused: .* held by live task task-a/);
-  assert.equal(claim(["check", DOC, "--task", "task-b"], { FM_HOME: h }).status, 3);
+  assert.match(claim(["list"], { FM_HOME: h }).out, new RegExp(`${DOC}\\ttask-a\\tlive`));
 });
 
 test("a relaunch of the same task keeps its claim", () => {
@@ -37,38 +37,43 @@ test("a relaunch of the same task keeps its claim", () => {
   const again = claim(["claim", DOC], { FM_HOME: h, FM_TASK_ID: "task-a" });
   assert.equal(again.status, 0);
   assert.match(again.out, /^kept: /);
-  assert.match(claim(["check", DOC], { FM_HOME: h, FM_TASK_ID: "task-a" }).out, /^held-by-you/);
+  assert.match(claim(["list"], { FM_HOME: h }).out, new RegExp(`${DOC}\\ttask-a\\tlive`));
 });
 
 test("a claim whose task no longer exists is stale and may be taken over", () => {
   const h = home();
   claim(["claim", DOC, "--task", "task-a"], { FM_HOME: h });
   rmSync(path.join(h, "state", "task-a.meta"));
-  assert.match(claim(["check", DOC, "--task", "task-b"], { FM_HOME: h }).out, /^stale: /);
   assert.match(claim(["list"], { FM_HOME: h }).out, /task-a\tstale/);
   const taken = claim(["claim", DOC, "--task", "task-b"], { FM_HOME: h });
   assert.equal(taken.status, 0);
   assert.match(taken.out, /taken-over: .* from stale holder task-a/);
 });
 
-test("several ids for one page are claimed all or nothing", () => {
+test("a watcher attaches the discovered page id to its existing claim", () => {
   const h = home();
-  claim(["claim", SLUG, "--task", "task-a"], { FM_HOME: h });
-  const refused = claim(["claim", DOC, SLUG, "--task", "task-b"], { FM_HOME: h });
+  claim(["claim", DOC, "--task", "task-a"], { FM_HOME: h });
+  const attached = claim(["claim", DOC, SLUG, "--task", "task-a"], { FM_HOME: h });
+  assert.equal(attached.status, 0);
+  assert.match(attached.out, new RegExp(`kept: ${DOC}`));
+  assert.match(attached.out, new RegExp(`claimed: ${SLUG}`));
+  const refused = claim(["claim", SLUG, "--task", "task-b"], { FM_HOME: h });
   assert.equal(refused.status, 3);
-  assert.match(claim(["check", DOC, "--task", "task-b"], { FM_HOME: h }).out, /^free: /);
+  assert.match(claim(["list"], { FM_HOME: h }).out, new RegExp(`${SLUG}\\ttask-a\\tlive`));
 });
 
-test("release only drops the caller's own claim; release-task drops them all", () => {
+test("a conflicting discovered id refuses atomically and release-task frees the original claim", () => {
   const h = home();
-  claim(["claim", DOC, SLUG, "--task", "task-a"], { FM_HOME: h });
-  assert.equal(claim(["release", DOC, "--task", "task-b"], { FM_HOME: h }).status, 3);
-  assert.match(claim(["release", DOC, "--task", "task-a"], { FM_HOME: h }).out, /^released: /);
-  assert.match(claim(["release-task", "--task", "task-a"], { FM_HOME: h }).out, new RegExp(`released: ${SLUG}`));
-  assert.match(claim(["list"], { FM_HOME: h }).out, /^no claims/);
+  claim(["claim", DOC, "--task", "task-a"], { FM_HOME: h });
+  claim(["claim", SLUG, "--task", "task-b"], { FM_HOME: h });
+  assert.equal(claim(["claim", DOC, SLUG, "--task", "task-a"], { FM_HOME: h }).status, 3);
+  assert.match(claim(["list"], { FM_HOME: h }).out, new RegExp(`${DOC}\\ttask-a\\tlive`));
+  assert.match(claim(["release-task", "--task", "task-a"], { FM_HOME: h }).out, new RegExp(`released: ${DOC}`));
+  assert.doesNotMatch(claim(["list"], { FM_HOME: h }).out, new RegExp(`${DOC}\\ttask-a`));
+  assert.match(claim(["list"], { FM_HOME: h }).out, new RegExp(`${SLUG}\\ttask-b\\tlive`));
 });
 
-test("list shows pages, holders, and liveness; sweep removes stale claims", () => {
+test("list shows pages, holders, and liveness", () => {
   const h = home();
   claim(["claim", DOC, "--task", "task-a"], { FM_HOME: h });
   claim(["claim", SLUG, "--task", "task-b"], { FM_HOME: h });
@@ -77,8 +82,6 @@ test("list shows pages, holders, and liveness; sweep removes stale claims", () =
   assert.match(list, /^page\tholder\tstate\tsince/);
   assert.match(list, new RegExp(`${DOC}\ttask-a\tlive`));
   assert.match(list, new RegExp(`${SLUG}\ttask-b\tstale`));
-  assert.match(claim(["sweep"], { FM_HOME: h }).out, new RegExp(`swept: ${SLUG} from task-b`));
-  assert.doesNotMatch(claim(["list"], { FM_HOME: h }).out, /task-b/);
 });
 
 test("the home comes from --home, FM_HOME, or FM_TASK_INBOX, and claims are per home", () => {
@@ -106,6 +109,17 @@ test("usage errors exit 2", () => {
   assert.equal(claim(["list", "--home", "/nonexistent-home"]).status, 2);
   assert.equal(claim(["bogus"], { FM_HOME: h }).status, 2);
   assert.equal(claim(["--help"]).status, 0);
+});
+
+test("direct invocation works from a skill path containing spaces", () => {
+  const dir = tempDir("fca skill path ");
+  const scriptDir = path.join(dir, "installed skill", "scripts");
+  mkdirSync(scriptDir, { recursive: true });
+  const script = path.join(scriptDir, "watch-claim.mjs");
+  copyFileSync(TOOL, script);
+  const result = spawnSync(process.execPath, [script, "--help"], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^watch-claim: advisory per-page watch claims/);
 });
 
 test("concurrent claims by two live tasks leave exactly one holder", async () => {

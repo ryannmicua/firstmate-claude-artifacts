@@ -33,7 +33,6 @@ Do these steps in order every time your session starts, including after a crash,
 
 1. **Claim the page.**
    Run `node <skill-dir>/scripts/watch-claim.mjs claim <page link or id>`.
-   For a Claude Doc, also pass the doc's other id once you learn it (a doc has a `claude.ai/code/artifact/<uuid>` link and a 22-character watch id that the watch listing shows); one `claim` with both ids takes them together.
    - `claimed:` or `kept:` (your own earlier claim) or `taken-over:` (the old holder's task is gone): continue.
    - `refused:` (exit 3): another live task watches this page.
      Do not publish, watch, or comment.
@@ -50,6 +49,7 @@ Do these steps in order every time your session starts, including after a crash,
 4. **Confirm the watch.**
    Ask your Artifact tool for this session's watch listing.
    The page must show as `connected` (a few seconds of `connecting` is normal; check again).
+   For a Claude Doc, the link gives its UUID and the listing shows its 22-character watch id. Immediately run `node <skill-dir>/scripts/watch-claim.mjs claim <UUID> <watch id>` so both identifiers belong to this task. If it prints `refused:`, stop this watch, run `node <skill-dir>/scripts/watch-claim.mjs release-task`, report `blocked` to Firstmate with the holder named in the output, and stop.
    With the launch setting off it must not say `auto-replies armed`; if it does, go back to step 2's blocked report.
    If the watch never connects, report `blocked` with the listing text.
 5. **Catch up.**

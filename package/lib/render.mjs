@@ -76,7 +76,7 @@ export function isConnectorRow(row) {
 // Build the announced output. Returns { output, cursorsAfter, announced, more }
 // where announced=false means nothing needs a wake (cursorsAfter can be
 // committed at once).
-export function buildResult({ sourceId, requestId, doc, parsed, cursorsBefore, fallback, authors, checkedAt, recordOnly }) {
+export function buildResult({ sourceId, requestId, doc, parsed, cursorsBefore, fallback, checkedAt }) {
   const cursorsAfter = { ...cursorsBefore };
   const candidates = [];
   let connectorRows = 0;
@@ -90,7 +90,8 @@ export function buildResult({ sourceId, requestId, doc, parsed, cursorsBefore, f
       if (raw.seq > max) max = raw.seq;
       const row = normalizeRow(raw, tab.id);
       if (!row) continue;
-      if (authors === "people" && isConnectorRow(row)) {
+      if (row.kind !== "comment" && row.kind !== "reply") continue;
+      if (isConnectorRow(row)) {
         connectorRows += 1;
         continue;
       }
@@ -100,7 +101,7 @@ export function buildResult({ sourceId, requestId, doc, parsed, cursorsBefore, f
   }
   candidates.sort((a, b) => a.seq - b.seq);
   let more = parsed.truncatedTabs.size > 0;
-  if (recordOnly || candidates.length === 0) {
+  if (candidates.length === 0) {
     return { output: "", cursorsAfter, announced: false, more };
   }
 

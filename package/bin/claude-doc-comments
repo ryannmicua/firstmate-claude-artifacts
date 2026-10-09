@@ -35,8 +35,6 @@ Source configuration reference (register-extension --config-ref):
   wait      ${String(DEFAULTS.wait).padEnd(19)} longest wait inside one poll for the next check (0-240)
   timeout   ${String(DEFAULTS.timeout).padEnd(19)} seconds one check session may run (10-900)
   budget    ${String(DEFAULTS.budget).padEnd(19)} --max-budget-usd for one check session
-  start     ${DEFAULTS.start.padEnd(19)} all: announce existing comments; latest: only newer ones
-  authors   ${DEFAULTS.authors.padEnd(19)} people: skip rows written through the Docs connector; all: keep them
   failures  ${String(DEFAULTS.failures).padEnd(19)} failed checks in a row before an error result (1-100)
   claude    (searched)          absolute path of the claude binary
 

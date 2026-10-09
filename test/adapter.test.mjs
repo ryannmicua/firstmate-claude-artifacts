@@ -2,6 +2,8 @@
 // announced results, replay, cursor durability, failures, and presentation.
 
 import assert from "node:assert/strict";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
 import { DOC, invokeRequest, poll, resultOp, rid, row, run, sandbox, TAB1, TAB2 } from "./helpers.mjs";
 
@@ -81,7 +83,6 @@ test("an empty check is silent and records the check time", () => {
   const state = box.readState();
   assert.equal(state.pending, null);
   assert.ok(state.last_check_at > 0);
-  assert.equal(state.initialized, true);
 });
 
 test("a retry with the same request id replays the pending result without a new check", () => {
@@ -179,14 +180,12 @@ test("a tab added later starts from zero", () => {
   assert.deepEqual(result.rows.map((r) => r.body), ["new tab comment"]);
 });
 
-test("rows written through the Docs connector are skipped by default and kept with authors=all", () => {
+test("rows written through the Docs connector are skipped", () => {
   const rows = [row(TAB1, 5, "agent reply", { via: "mcp" }), row(TAB1, 6, "person comment")];
   const box = sandbox({ rows });
   const result = announced(poll(box, rid("1")));
   assert.deepEqual(result.rows.map((r) => r.body), ["person comment"]);
   assert.equal(result.omitted.connector_rows, 1);
-  const all = sandbox({ rows });
-  assert.equal(announced(poll(all, rid("1"), "&authors=all")).rows.length, 2);
 });
 
 test("only connector-written rows stay silent and still advance the cursor", () => {
@@ -195,13 +194,42 @@ test("only connector-written rows stay silent and still advance the cursor", () 
   assert.deepEqual(box.readState().cursors, { [TAB1]: 5 });
 });
 
-test("start=latest records existing comments without announcing them", () => {
-  const box = sandbox({ rows: [row(TAB1, 5, "old")] });
-  silent(poll(box, rid("1"), "&start=latest"));
-  assert.deepEqual(box.readState().cursors, { [TAB1]: 5 });
-  box.setScenario({ rows: [row(TAB1, 5, "old"), row(TAB1, 8, "new")] });
-  box.makeDue();
-  assert.deepEqual(announced(poll(box, rid("2"), "&start=latest")).rows.map((r) => r.body), ["new"]);
+test("resolve and other events do not announce by themselves and advance the cursor", () => {
+  const other = row(TAB1, 6, "ignored event");
+  other.verb = "update";
+  const box = sandbox({ rows: [row(TAB1, 5, "resolved thread", { kind: "resolve" }), other] });
+  silent(poll(box, rid("1")));
+  assert.deepEqual(box.readState().cursors, { [TAB1]: 6 });
+});
+
+test("resolve and other events are omitted when comments announce a result", () => {
+  const other = row(TAB1, 7, "ignored event");
+  other.verb = "update";
+  const box = sandbox({ rows: [row(TAB1, 5, "person comment"), row(TAB1, 6, "resolved thread", { kind: "resolve" }), other] });
+  const result = announced(poll(box, rid("1")));
+  assert.deepEqual(result.rows.map((item) => item.body), ["person comment"]);
+  assert.deepEqual(result.cursors.after, { [TAB1]: 7 });
+});
+
+test("parse failures persist structural diagnostics without transcript content", () => {
+  const box = sandbox();
+  const legacy = path.join(box.state, "run", "last-failed-transcript.jsonl");
+  mkdirSync(path.dirname(legacy), { recursive: true });
+  writeFileSync(legacy, "previous private transcript");
+  box.setScenario({ mode: "parse-failure-with-content", secretText: "PRIVATE_COMMENT_BODY" });
+  silent(poll(box, rid("1")));
+
+  const diagnosticPath = path.join(box.state, "run", "last-failed-check.json");
+  const diagnosticText = readFileSync(diagnosticPath, "utf8");
+  const diagnostic = JSON.parse(diagnosticText);
+  assert.deepEqual(Object.keys(diagnostic), ["exit_status", "error_class", "byte_count", "line_count", "timestamp"]);
+  assert.equal(diagnostic.exit_status, 0);
+  assert.equal(diagnostic.error_class, "CheckError");
+  assert.ok(diagnostic.byte_count > 0);
+  assert.ok(diagnostic.line_count > 0);
+  assert.ok(Number.isFinite(Date.parse(diagnostic.timestamp)));
+  assert.doesNotMatch(diagnosticText, /PRIVATE_COMMENT_BODY|previous private transcript/);
+  assert.equal(existsSync(legacy), false);
 });
 
 test("a truncated page sets more and makes the next check due at once", () => {

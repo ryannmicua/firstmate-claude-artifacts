@@ -59,7 +59,7 @@ const toolResult = (id, text, isError = false) => {
 };
 
 emit({ type: "system", subtype: "init", tools: ["mcp__claude_ai_Claude_Docs__query", "mcp__claude_ai_Claude_Docs__read"], model: "fake" });
-if (effectiveMode !== "no-read") {
+if (effectiveMode !== "no-read" && effectiveMode !== "parse-failure-with-content") {
   const readId = toolUse("mcp__claude_ai_Claude_Docs__read", { ref: { object: "project", id: scenario.doc } });
   if (effectiveMode === "deny") {
     toolResult(readId, JSON.stringify({ verdict: "deny", reason: "access" }));
@@ -90,6 +90,9 @@ if (effectiveMode !== "no-read") {
     });
   }
 }
-emit({ type: "assistant", message: { content: [{ type: "text", text: effectiveMode === "no-read" ? "I will not do that." : "DONE" }] } });
+const finalText = effectiveMode === "no-read"
+  ? "I will not do that."
+  : effectiveMode === "parse-failure-with-content" ? scenario.secretText : "DONE";
+emit({ type: "assistant", message: { content: [{ type: "text", text: finalText }] } });
 emit({ type: "result", subtype: mode === "error-result" ? "error_max_budget_usd" : "success", is_error: mode === "error-result", result: "DONE", total_cost_usd: 0 });
 process.stdout.write(`${out.join("\n")}\n`);

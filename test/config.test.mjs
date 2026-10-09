@@ -18,14 +18,12 @@ test("the 22-character artifact id form is accepted", () => {
 });
 
 test("settings are parsed and bounded", () => {
-  const config = parseConfigRef(`doc:${DOC}?model=claude-sonnet-5-5&every=900&wait=0&timeout=60&budget=0.25&start=latest&authors=all&failures=5&claude=/opt/claude/bin/claude`);
+  const config = parseConfigRef(`doc:${DOC}?model=claude-sonnet-5-5&every=900&wait=0&timeout=60&budget=0.25&failures=5&claude=/opt/claude/bin/claude`);
   assert.equal(config.model, "claude-sonnet-5-5");
   assert.equal(config.every, 900);
   assert.equal(config.wait, 0);
   assert.equal(config.timeout, 60);
   assert.equal(config.budget, 0.25);
-  assert.equal(config.start, "latest");
-  assert.equal(config.authors, "all");
   assert.equal(config.failures, 5);
   assert.equal(config.claude, "/opt/claude/bin/claude");
 });
@@ -43,8 +41,6 @@ for (const bad of [
   `doc:${DOC}?budget=50`,
   `doc:${DOC}?model=Claude Haiku`,
   `doc:${DOC}?model=$(id)`,
-  `doc:${DOC}?start=sometimes`,
-  `doc:${DOC}?authors=bots`,
   `doc:${DOC}?claude=relative/claude`,
   `doc:${DOC}?claude=/a/../b`,
   `doc:${DOC}?colour=blue`,

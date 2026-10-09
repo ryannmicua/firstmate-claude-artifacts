@@ -10,11 +10,7 @@ The worker is always a Claude Code worker, dedicated to one page.
 
 ## Steps
 
-Claim every ID the page is known by. A new artifact has no ID until publish returns its URL, so the worker claims that ID as soon as it is available and before requesting the watch.
-A Claude Doc is known by its UUID and a paired 22-character artifact ID, but the Docs read returns only the UUID: the paired ID first appears in the watch result.
-So the worker claims the UUID before the watch, then claims the UUID plus the paired ID in one command immediately after activation, before reading comments.
-Those few seconds are a known overlap window; no read-only route to the paired ID before activation is known.
-If that claim collides, the worker stops the watch, releases its claims, and reports `blocked`.
+The [watcher skill's startup procedure](../../skills/claude-artifact-watcher/SKILL.md#start-and-again-after-every-relaunch) covers page-ID claims, including the Claude Doc paired ID that first appears in the watch result and the brief claim window that follows.
 
 1. **Launch the worker with automatic replies off.**
    Its environment must contain `CLAUDE_CODE_ARTIFACT_COMMENTS_AUTOREACT=0`.
@@ -45,12 +41,7 @@ If that claim collides, the worker stops the watch, releases its claims, and rep
 
 ## Tell the worker's replies apart
 
-A watching worker replies through the account owner's Claude login, so its replies show the owner's name, and a doc reply's author has the owner's `principal` and `self: true`.
-A reviewer who is the owner sees the worker's replies under their own name.
-Two things tell them apart:
-
-- Every reply the worker writes begins with the visible marker `Mate: `.
-- On a Claude Doc, the author field `via` is `"mcp"` for a reply written through the connector and `"frame"` for a comment written in the editor. `via` is the only reliable machine signal; the name, principal, and `self` are the same for both.
+The [watcher skill](../../skills/claude-artifact-watcher/SKILL.md#reading-threads) defines the visible reply marker and how to identify connector-written Claude Doc comments.
 
 ## Check who watches which page
 

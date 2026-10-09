@@ -31,10 +31,9 @@ It finds your task from `FM_TASK_ID` and your Firstmate home from `FM_HOME` or `
 
 Do these steps in order every time your session starts, including after a crash, a resume, or a relaunch.
 
-1. **Resolve the page IDs and claim them together before watching.**
+1. **Claim every page ID you can resolve before watching.**
    For an existing artifact link, claim its ID with `node <skill-dir>/scripts/watch-claim.mjs claim <page link or id>`.
-   For a Claude Doc, claim its UUID now: `node <skill-dir>/scripts/watch-claim.mjs claim <UUID>`.
-   A Claude Doc is also known by a paired 22-character artifact ID, but the Docs `read` returns only the UUID; the paired ID first appears in the watch result, so you claim it in step 4 right after the watch starts. Do not guess or derive an ID.
+   For a Claude Doc link with a UUID, claim its UUID now: `node <skill-dir>/scripts/watch-claim.mjs claim <UUID>`. Do not guess or derive the paired artifact ID.
    If a local file already has a published URL, claim that URL before republishing it. A new local file has no page ID until publish returns its URL; claim that ID immediately before requesting the watch. If publishing starts the watch itself, use the conflict procedure in step 4.
    - `claimed:` or `kept:` (your own earlier claim) or `taken-over:` (the old holder's task is gone): continue.
    - `refused:` (exit 3): another live task watches this page.
@@ -53,10 +52,10 @@ Do these steps in order every time your session starts, including after a crash,
    Ask your Artifact tool for this session's watch listing.
    The page must show as `connected` (a few seconds of `connecting` is normal; check again).
    If the watch result or listing shows an ID you have not claimed yet, immediately run another `claim` command with every already claimed page ID plus the new one.
-   For a Claude Doc this always happens: the watch result is the first place its paired 22-character ID appears, so run `node <skill-dir>/scripts/watch-claim.mjs claim <UUID> <watch id>` as your very next action.
+   For a Claude Doc, the paired 22-character ID first appears in the watch result; as your very next action, run `node <skill-dir>/scripts/watch-claim.mjs claim <UUID> <watch id>`.
    For a new artifact use `node <skill-dir>/scripts/watch-claim.mjs claim <published URL> <watch id>`.
    Do not read or handle comments until this claim succeeds. If it prints `refused:`, stop this watch, run `node <skill-dir>/scripts/watch-claim.mjs release-task`, report `blocked` to Firstmate with the holder named in the output, and stop.
-   The few seconds between activation and this claim are a known overlap window: no read-only route to a Claude Doc's paired ID before activation is known, so keep the window short rather than skipping the claim.
+   No read-only route to a Claude Doc's paired ID before activation is known, so keep this few-second overlap short rather than skipping the claim.
    With the launch setting off it must not say `auto-replies armed`; if it does, go back to step 2's blocked report.
    If the watch never connects, report `blocked` with the listing text.
 5. **Catch up.**
@@ -120,7 +119,6 @@ A claim left behind by a crash is not a problem: once your task no longer exists
 ## Launch setting
 
 Launch every watching worker with `CLAUDE_CODE_ARTIFACT_COMMENTS_AUTOREACT=0` in its environment.
-Firstmate rewrites `<worktree>/.claude/settings.local.json` at every launch, so an `env` entry there does not reach the worker; the launch how-to gives the home-wide and per-worker routes.
 Without it, Claude Code arms automatic replies for a page the session publishes; when a reviewer sends a comment to Claude, the automatic replier answers and resolves the thread before the worker sees it.
 With it, no automatic reply is posted, and the comment also does not arrive as a turn, which is why this skill re-reads on a timer.
 The variable is undocumented (Claude Code 2.1.295); the repository's explanation page records the evidence and its limits.

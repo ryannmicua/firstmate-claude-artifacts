@@ -96,3 +96,9 @@ pass "only comments newer than the durable cursor are announced"
 "$HOST" retire-binding io.github.ryannmicua.firstmate-claude-artifacts --if-binding-digest "$binding_digest" >/dev/null
 "$HOST" list | grep -q "io.github.ryannmicua" && fail "the binding is still listed after retirement"
 pass "the source and binding retire cleanly"
+shopt -s nullglob
+launch_records=("$FM_HOME/state/procevent/picnic-review."*.last-launch)
+handled_records=("$FM_HOME/state/procevent-inbox/picnic-review."*.handled)
+[ "${#launch_records[@]}" -gt 0 ] || fail "source retirement removed its launch records"
+[ "${#handled_records[@]}" -gt 0 ] || fail "source retirement removed its handled inbox state"
+pass "retirement preserves ${#launch_records[@]} launch record(s) and ${#handled_records[@]} handled result(s)"

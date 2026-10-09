@@ -1,0 +1,12 @@
+{
+  "name": "firstmate-claude-artifacts",
+  "private": true,
+  "description": "Firstmate add-on: Claude artifacts and Claude Docs as a review surface",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:host": "test/integration/firstmate-host.test.sh",
+    "test:live": "test/live/live-check.sh"
+  }
+}

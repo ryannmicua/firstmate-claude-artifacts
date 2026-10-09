@@ -1,0 +1,138 @@
+#!/usr/bin/env node
+// claude-doc-comments: Firstmate process-event-adapter/1 entrypoint.
+// Run with --help for usage. The host runs `handshake` and `invoke` with one
+// JSON request on stdin and reads one JSON response from stdout; logs go to
+// stderr only.
+
+import { invoke } from "../lib/adapter.mjs";
+import { ConfigError, DEFAULTS, parseConfigRef } from "../lib/config.mjs";
+import { ADAPTER, EXTENSION_ID, EXTENSION_VERSION, failure, parseStrictJson, ProtocolError, validateHandshake, validateInvoke } from "../lib/protocol.mjs";
+
+const HELP = `claude-doc-comments ${EXTENSION_VERSION} (${EXTENSION_ID})
+
+Firstmate trusted external process-event adapter "${ADAPTER}". Each poll runs
+one short, read-only \`claude -p\` session on a low-cost model that reads the
+comment rows of one Claude Doc newer than a durable per-source cursor. New
+comments become one announced result for the owning agent; an empty check
+returns no result and wakes nobody. Comment text is untrusted data in both
+the check session's prompt and the result.
+
+Usage:
+  claude-doc-comments handshake          (host only; JSON request on stdin)
+  claude-doc-comments invoke             (host only; JSON request on stdin)
+  claude-doc-comments validate-config <config-ref>
+  claude-doc-comments --help | --version
+
+Source configuration reference (register-extension --config-ref):
+  doc:<doc-id>[?key=value&key=value...]
+
+  <doc-id> is the Claude Doc's UUID or 22-character artifact id: the last
+  path segment of its https://claude.ai/code/artifact/... link.
+
+  key       default             meaning
+  model     ${DEFAULTS.model.padEnd(19)} model for the check session
+  every     ${String(DEFAULTS.every).padEnd(19)} seconds between checks (30-86400)
+  wait      ${String(DEFAULTS.wait).padEnd(19)} longest wait inside one poll for the next check (0-240)
+  timeout   ${String(DEFAULTS.timeout).padEnd(19)} seconds one check session may run (10-900)
+  budget    ${String(DEFAULTS.budget).padEnd(19)} --max-budget-usd for one check session
+  start     ${DEFAULTS.start.padEnd(19)} all: announce existing comments; latest: only newer ones
+  authors   ${DEFAULTS.authors.padEnd(19)} people: skip rows written through the Docs connector; all: keep them
+  failures  ${String(DEFAULTS.failures).padEnd(19)} failed checks in a row before an error result (1-100)
+  claude    (searched)          absolute path of the claude binary
+
+  Keep wait + timeout below the binding's --timeout-ms (default 300000 ms).
+  The claude binary is searched in ~/.local/bin, ~/.claude/local,
+  /usr/local/bin, /opt/homebrew/bin, then the host's minimal PATH.
+
+Required consents when binding: network, credential-store (the check uses the
+operator's Claude login under HOME), artifact-references (the source names a
+claude.ai artifact).
+
+Example:
+  bin/fm-extension.sh bind ~/.local/share/firstmate-packages/claude-doc-comments \\
+    --adapter ${ADAPTER} --trust-same-user-code \\
+    --consent network --consent credential-store --consent artifact-references
+  bin/fm-procevent.sh register-extension ${ADAPTER} plan-review \\
+    --config-ref 'doc:123e4567-e89b-42d3-a456-426614174000?every=600'
+
+Documentation: https://github.com/ryannmicua/firstmate-claude-artifacts/tree/main/docs
+`;
+
+async function readStdin() {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of process.stdin) {
+    size += chunk.length;
+    if (size > 65536) throw new ProtocolError("request is larger than 65536 bytes");
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
+function write(value) {
+  process.stdout.write(`${JSON.stringify(value)}\n`);
+}
+
+async function main(argv) {
+  const verb = argv[0] || "";
+  if (verb === "--help" || verb === "-h" || verb === "help") {
+    process.stdout.write(HELP);
+    return 0;
+  }
+  if (verb === "--version") {
+    process.stdout.write(`${EXTENSION_VERSION}\n`);
+    return 0;
+  }
+  if (verb === "validate-config") {
+    try {
+      const config = parseConfigRef(argv[1]);
+      process.stdout.write(`${JSON.stringify(config, null, 2)}\n`);
+      return 0;
+    } catch (error) {
+      if (!(error instanceof ConfigError)) throw error;
+      process.stderr.write(`invalid config_ref: ${error.message}\n`);
+      return 2;
+    }
+  }
+  if (verb !== "handshake" && verb !== "invoke") {
+    process.stderr.write(`unknown verb ${JSON.stringify(verb)}; run with --help\n`);
+    return 2;
+  }
+  let request;
+  try {
+    request = parseStrictJson(await readStdin());
+  } catch (error) {
+    process.stderr.write(`${error.message}\n`);
+    return 1;
+  }
+  if (verb === "handshake") {
+    try {
+      write(validateHandshake(request));
+      return 0;
+    } catch (error) {
+      process.stderr.write(`handshake refused: ${error.message}\n`);
+      return 1;
+    }
+  }
+  const requestId = typeof request?.request_id === "string" && /^sha256:[0-9a-f]{64}$/.test(request.request_id) ? request.request_id : null;
+  if (requestId === null) {
+    process.stderr.write("invocation request has no valid request_id\n");
+    return 1;
+  }
+  try {
+    validateInvoke(request);
+  } catch (error) {
+    if (!(error instanceof ProtocolError)) throw error;
+    write(failure(requestId, error.code, false, error.message));
+    return 0;
+  }
+  try {
+    write(await invoke(request));
+  } catch (error) {
+    process.stderr.write(`internal error: ${error.stack || error.message}\n`);
+    write(failure(requestId, "internal", true, error.message));
+  }
+  return 0;
+}
+
+process.exitCode = await main(process.argv.slice(2));

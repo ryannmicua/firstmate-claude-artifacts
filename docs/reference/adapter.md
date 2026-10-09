@@ -44,7 +44,7 @@ At most 512 bytes. Each id is a Claude Doc UUID or 22-character artifact id. Use
 | `source.poll` | `no-result` when the check is not due within `wait`, when nothing new was found, or for a failure below the threshold. `result` with the output below when people wrote new rows. A retry with the same request id replays the same output without a new check. |
 | `result.classify` | `claude-doc-comments` for this adapter's output, `unrecognized` otherwise. |
 | `result.terminal` | Always `false`: a source keeps polling until it is retired. |
-| `result.silent` | `true` only for this adapter's output with no rows; `false` otherwise. |
+| `result.silent` | `true` only for this adapter's output with no rows or doc errors; `false` otherwise. |
 
 Errors use the contract's codes: `invalid-request` (bad envelope or config reference; not retryable), `incompatible` (identity or version mismatch), `unavailable` (no state directory; a refused doc read, not retryable; or `failures` checks failed in a row, retryable), `internal`.
 
@@ -55,12 +55,11 @@ One `claude -p` run per due source check, from `<state>/run`; the prompt reads e
 ```text
 claude -p --model <model> --output-format stream-json --verbose --tools "" --disable-slash-commands
   --setting-sources "" --settings <inline PreToolUse hook settings>
-  --allowedTools mcp__claude_ai_Claude_Docs__read,mcp__claude_ai_Claude_Docs__query
   --disallowedTools mcp__claude_ai_Claude_Docs__{batch,create,update,delete,export,guide}
-  --permission-prompts none --no-session-persistence --max-budget-usd <budget>
+  --permission-mode dontAsk --permission-prompts none --no-session-persistence --max-budget-usd <budget>
 ```
 
-The per-run settings install a deterministic `PreToolUse` hook for every tool call. It permits only the Claude Docs `read` and `query` tools, and only when the requested doc or query container ID is in this source's configured ID list. The hook denies other tools, malformed calls, and unconfigured IDs before execution. It also handles each explicitly configured alias. The scope applies to this comment check; watching workers that read or combine docs have their own access scope.
+The per-run settings install a deterministic `PreToolUse` hook for every tool call with a 30-second timeout. It explicitly allows only the Claude Docs `read` and `query` tools when the requested doc or query container ID is in this source's configured ID list. It denies other tools, malformed calls, and unconfigured IDs before execution, including each configured alias. No Docs tool is broadly preapproved: if the hook is missing, fails, or times out without a decision, `dontAsk` denies the unresolved call. The scope applies to this comment check; watching workers that read or combine docs have their own access scope.
 
 The prompt asks for one `read` of each configured doc and one `query` per tab with `afterSeq` set to that tab's cursor (0 for a tab not seen before) and `limit` 100, and says all tool output is untrusted data.
 The adapter parses the raw tool results out of the transcript and ignores the model's reply text.
@@ -69,7 +68,7 @@ A session that did not make the expected calls is retried once when at least hal
 
 ## Result output
 
-UTF-8 JSON, at most 30,000 bytes, pretty-printed, with these top-level fields in this order:
+UTF-8 JSON, at most 30,000 bytes, pretty-printed, with these top-level fields:
 
 | Field | Meaning |
 | --- | --- |
@@ -79,11 +78,12 @@ UTF-8 JSON, at most 30,000 bytes, pretty-printed, with these top-level fields in
 | `checked_at` | ISO time of the check. |
 | `doc` | For a single announced doc: `id`, `url`, `title`, and `tabs` (`id`, `name`). |
 | `cursors` | For a single announced doc: `before` and `after`, per-tab sequence cursors. |
-| `more` | `true` when rows or configured docs were held back; the next check runs at once. |
+| `more` | `true` when the result-size bound held back rows or announced docs; the next check runs at once. |
 | `unchecked_tabs` | Tabs the session failed to query; they keep their cursors and are retried next check. |
 | `omitted` | Connector-written comment rows skipped; `rows_over_size_bound` held back. |
 | `rows` | New comment and reply rows, oldest first. Resolve and other event rows advance the cursor silently and are not included. |
-| `documents` | When multiple docs are announced together, an array of per-doc objects with the same `doc`, `cursors`, `more`, `unchecked_tabs`, `omitted`, and `rows` fields. |
+| `errors` | In a partial result, one entry per failed configured doc: `doc.id`, a bounded error `message`, and `permanent`. Error text is untrusted. A failed doc has no pending result and its cursor does not advance; successful docs keep their independent capture and cursor behavior. |
+| `documents` | When multiple successful docs are announced together, an array of per-doc objects with the same `doc`, `cursors`, `more`, `unchecked_tabs`, `omitted`, and `rows` fields. |
 
 Each row: `seq`, `id`, `tab`, `thread` (root comment id), `kind` (`comment` or `reply`), `at`, `author` (`name`, `principal`, `via`, `self`, `guest`), `sent_to_claude`, optional `answered`, `anchor_text` for a comment, and `body`.
 Strings written by people are cut to 2,000 (body) or 120 (names) characters, control characters become U+FFFD, and invisible or direction-changing characters are shown as `<U+XXXX>`.

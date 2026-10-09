@@ -31,8 +31,10 @@ It finds your task from `FM_TASK_ID` and your Firstmate home from `FM_HOME` or `
 
 Do these steps in order every time your session starts, including after a crash, a resume, or a relaunch.
 
-1. **Claim the page.**
-   Run `node <skill-dir>/scripts/watch-claim.mjs claim <page link or id>`.
+1. **Resolve the page IDs and claim them together before watching.**
+   For an existing artifact link, claim its ID with `node <skill-dir>/scripts/watch-claim.mjs claim <page link or id>`.
+   For a Claude Doc link with a UUID, call Claude Docs `read` on that UUID before starting the watch. If its returned frame URL, slug, or link explicitly exposes the paired 22-character artifact ID, claim both IDs in one command: `node <skill-dir>/scripts/watch-claim.mjs claim <UUID> <22-character id>`. Do not guess or derive an ID that the read did not return.
+   If a local file already has a published URL, claim that URL before republishing it. A new local file has no page ID until publish returns its URL; claim that ID immediately before requesting the watch. If publishing starts the watch itself, use the conflict procedure in step 4.
    - `claimed:` or `kept:` (your own earlier claim) or `taken-over:` (the old holder's task is gone): continue.
    - `refused:` (exit 3): another live task watches this page.
      Do not publish, watch, or comment.
@@ -42,14 +44,14 @@ Do these steps in order every time your session starts, including after a crash,
    If it does not print `0` or `false`, Claude Code's automatic replier may answer comments before you see them.
    Report `blocked` to Firstmate asking to relaunch this worker with `CLAUDE_CODE_ARTIFACT_COMMENTS_AUTOREACT=0`, then stop.
 3. **Publish or republish the page yourself.**
-   - A page from a local file: publish it with your Artifact tool.
+   - A page from a local file: publish it with your Artifact tool. For a new page, claim the returned URL as soon as it is available and before asking the tool to watch it; if publish starts watching automatically, use the step 4 conflict procedure.
      If it was published before, publish to the same URL (pass its `url`) so the link stays the same.
    - An existing page link: read it, then republish it to its URL.
    - A Claude Doc: you cannot republish a doc; ask your Artifact tool to watch its link instead.
 4. **Confirm the watch.**
    Ask your Artifact tool for this session's watch listing.
    The page must show as `connected` (a few seconds of `connecting` is normal; check again).
-   For a Claude Doc, the link gives its UUID and the listing shows its 22-character watch id. Immediately run `node <skill-dir>/scripts/watch-claim.mjs claim <UUID> <watch id>` so both identifiers belong to this task. If it prints `refused:`, stop this watch, run `node <skill-dir>/scripts/watch-claim.mjs release-task`, report `blocked` to Firstmate with the holder named in the output, and stop.
+   If the listing reveals an ID that could not be resolved before activation, immediately run another `claim` command with every already claimed page ID plus the new one. For a Claude Doc use `node <skill-dir>/scripts/watch-claim.mjs claim <UUID> <watch id>`; for a new artifact use `node <skill-dir>/scripts/watch-claim.mjs claim <published URL> <watch id>`. Do not read or handle comments until this claim succeeds. If it prints `refused:`, stop this watch, run `node <skill-dir>/scripts/watch-claim.mjs release-task`, report `blocked` to Firstmate with the holder named in the output, and stop. When identity was not available earlier, this brief interval between activation and the atomic alias claim is the only overlap window; resolving the alias from the Doc read closes it before the watch starts.
    With the launch setting off it must not say `auto-replies armed`; if it does, go back to step 2's blocked report.
    If the watch never connects, report `blocked` with the listing text.
 5. **Catch up.**

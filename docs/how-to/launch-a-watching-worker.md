@@ -10,6 +10,8 @@ The worker is always a Claude Code worker, dedicated to one page.
 
 ## Steps
 
+For Claude Docs, resolve the page's identifiers before activating its watch. Have the worker read the Doc UUID with Claude Docs first and claim the UUID plus any paired 22-character ID explicitly returned by the read in one command. If the read does not expose the paired ID, the worker claims the UUID first and attaches the newly listed ID immediately after activation, before reading comments. That unresolved-ID interval is the only overlap window; a collision requires stopping the watch and releasing the task's claims. A new artifact has no ID until publish returns its URL, so claim that ID as soon as it is available and before requesting the watch.
+
 1. **Launch the worker with automatic replies off.**
    Its environment must contain `CLAUDE_CODE_ARTIFACT_COMMENTS_AUTOREACT=0`.
    Firstmate's `bin/fm-spawn.sh` has no per-task environment values; a worker inherits the launching environment, filtered by `config/launch-env-allowlist` when that file exists.
@@ -21,8 +23,8 @@ The worker is always a Claude Code worker, dedicated to one page.
    Tell it to use the `claude-artifact-watcher` skill.
 3. **Dispatch it** as a Claude worker. Do not give a watching task to another harness or to Firstmate itself.
 4. **Wait for its first status line.**
-   `working` with "watch confirmed" means the page is claimed, published, watched, caught up, and on a timed re-read.
-   `blocked` names the reason: another task holds the page claim, the launch setting is missing, or the watch would not connect.
+   `working` with "watch confirmed" means all known page IDs are claimed, the page is published, watched, caught up, and on a timed re-read.
+   `blocked` names the reason: another task holds an ID claim, the launch setting is missing, or the watch would not connect.
 5. **Answer what it relays.**
    Decisions and out-of-scope asks arrive as `needs-decision [key=comment-<thread id>]` lines; reply in the worker's inbox as for any other task.
 6. **End the review** by telling the worker it is over; it deletes its timer, releases its claim, and reports `done`.

@@ -163,9 +163,8 @@ export async function poll(request, { env = process.env, clock = realClock } = {
   const announced = [...builtByDoc].filter(([, value]) => value.built.announced)
     .map(([docId, value]) => ({ docId, built: value.built }));
   if (announced.length > 0) {
-    const combined = config.docs.length === 1
-      ? { output: announced[0].built.output, included: [announced[0].docId] }
-      : combineResults(announced);
+    const failures = [...checked.errors].map(([docId, error]) => ({ docId, error }));
+    const combined = combineResults(announced, failures);
     for (const { docId, built } of announced) {
       if (!combined.included.includes(docId)) {
         const store = stores.find((entry) => entry.doc.id === docId).store;

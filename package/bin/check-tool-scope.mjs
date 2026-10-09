@@ -4,15 +4,16 @@ import { isDocId } from "../lib/config.mjs";
 import { TOOL_QUERY, TOOL_READ } from "../lib/check.mjs";
 
 const allowedIds = process.argv.slice(2);
-const deny = () => {
+const decide = (permissionDecision) => {
   process.stdout.write(`${JSON.stringify({
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
-      permissionDecision: "deny",
-      permissionDecisionReason: "This check can access only its configured Claude Docs.",
+      permissionDecision,
+      ...(permissionDecision === "deny" ? { permissionDecisionReason: "This check can access only its configured Claude Docs." } : {}),
     },
   })}\n`);
 };
+const deny = () => decide("deny");
 
 if (allowedIds.length === 0 || allowedIds.some((id) => !isDocId(id)) || new Set(allowedIds).size !== allowedIds.length) {
   deny();
@@ -30,7 +31,7 @@ try {
     : event?.tool_name === TOOL_QUERY
       ? input?.object === "utterance" && input?.container?.kind === "project" && allowedIds.includes(input.container.id)
       : false;
-  if (!allowed) deny();
+  decide(allowed ? "allow" : "deny");
 } catch {
   deny();
 }

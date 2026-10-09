@@ -62,11 +62,12 @@ test("the check session is locked down and its prompt marks tool output untruste
   assert.equal(hook.hooks[0].command, process.execPath);
   assert.ok(hook.hooks[0].args[0].endsWith("/package/bin/check-tool-scope.mjs"));
   assert.deepEqual(hook.hooks[0].args.slice(1), [DOC]);
-  assert.equal(value("--allowedTools"), "mcp__claude_ai_Claude_Docs__read,mcp__claude_ai_Claude_Docs__query");
+  assert.equal(args.includes("--allowedTools"), false);
   for (const tool of ["batch", "create", "update", "delete", "export", "guide"]) {
     assert.match(value("--disallowedTools"), new RegExp(`mcp__claude_ai_Claude_Docs__${tool}`));
   }
   assert.equal(value("--permission-prompts"), "none");
+  assert.equal(value("--permission-mode"), "dontAsk");
   assert.ok(args.includes("--no-session-persistence"));
   assert.ok(args.includes("--disable-slash-commands"));
   assert.equal(value("--max-budget-usd"), "0.05");
@@ -158,6 +159,17 @@ test("classification and silence verdicts", () => {
   assert.deepEqual(resultOp(box, "result.terminal", "garbage").json.result, { value: false });
 });
 
+test("an error-only captured result is not classified as silent", () => {
+  const box = sandbox();
+  const errorOnly = JSON.stringify({
+    schema: "firstmate-claude-artifacts.doc-comments.v1",
+    source_id: "picnic-review",
+    request_id: rid("e"),
+    errors: [{ doc: { id: DOC }, message: "read refused", permanent: true }],
+  });
+  assert.equal(resultOp(box, "result.silent", errorOnly).json.result.value, false);
+});
+
 test("a poll before the next scheduled check waits at most `wait` and stays silent", () => {
   const box = sandbox({ rows: [] });
   silent(poll(box, rid("1")));
@@ -195,6 +207,7 @@ test("a multi-doc source checks each doc and commits each cursor independently",
   assert.equal(box.calls().length, 1);
   const settings = JSON.parse(box.calls()[0].argv[box.calls()[0].argv.indexOf("--settings") + 1]);
   assert.deepEqual(settings.hooks.PreToolUse[0].hooks[0].args.slice(1), [DOC, DOC_ALIAS, DOC2]);
+  assert.equal(settings.hooks.PreToolUse[0].hooks[0].timeout, 30);
   assert.equal(box.stateFiles().length, 2);
   assert.ok(box.readStates().every((state) => state.pending?.output === out.json.result.output));
 
@@ -216,6 +229,38 @@ test("a multi-doc source checks each doc and commits each cursor independently",
     ["first newer comment"],
     ["second newer comment"],
   ]);
+});
+
+test("a permanent failure is announced beside sibling comments without advancing its cursor", () => {
+  const comment = row(TAB1, 5, "first doc keeps receiving comments");
+  const box = sandbox({
+    docs: {
+      [DOC]: { title: "First doc", tabs: [{ id: TAB1, name: "Plan" }], rows: [comment] },
+      [DOC2]: { mode: "deny", title: "Second doc", tabs: [{ id: TAB3, name: "Notes" }], rows: [] },
+      [DOC_ALIAS]: { mode: "deny", title: "Third doc", tabs: [], rows: [] },
+    },
+  });
+  const out = poll(box, rid("1"), "", `${DOC},${DOC2},${DOC_ALIAS}`);
+  const result = announced(out);
+  assert.equal(result.doc.id, DOC);
+  assert.deepEqual(result.rows.map((item) => item.body), ["first doc keeps receiving comments"]);
+  assert.deepEqual(result.errors, [DOC2, DOC_ALIAS].map((id) => ({
+    doc: { id },
+    message: "the doc read was refused (access)",
+    permanent: true,
+  })));
+  assert.deepEqual(box.readState(DOC).cursors, {});
+  assert.deepEqual(box.readState(DOC2).cursors, {});
+  assert.equal(box.readState(DOC2).pending, null);
+  assert.deepEqual(box.readState(DOC_ALIAS).cursors, {});
+  assert.equal(box.readState(DOC_ALIAS).pending, null);
+
+  assert.equal(resultOp(box, "result.silent", out.json.result.output).json.result.value, false);
+  assert.deepEqual(box.readState(DOC).cursors, { [TAB1]: 5 });
+  assert.deepEqual(box.readState(DOC2).cursors, {});
+  assert.deepEqual(box.readState(DOC_ALIAS).cursors, {});
+  assert.equal(box.readState(DOC2).failures, 1);
+  assert.equal(box.readState(DOC_ALIAS).failures, 1);
 });
 
 test("a tab added later starts from zero", () => {

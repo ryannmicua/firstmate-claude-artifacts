@@ -12,6 +12,7 @@
 //           | "low-after-seq" | "wrong-container-kind" | "wrong-limit"
 //           | "parse-failure-with-content" | "deny" | "exit" | "hang"
 //           | "error-result" | "flaky",
+//     "docs": { "<doc id>": { "mode": "deny", ... } },
 //     "truncate": <max rows per query, optional> }
 
 import { appendFileSync, readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -64,11 +65,12 @@ emit({ type: "system", subtype: "init", tools: ["mcp__claude_ai_Claude_Docs__que
 if (effectiveMode !== "no-read" && effectiveMode !== "parse-failure-with-content") {
   for (const docId of requestedDocs) {
     const docScenario = scenario.docs?.[docId] || (scenario.doc === docId ? scenario : {});
+    const docMode = docScenario.mode || effectiveMode;
     const toolDocId = scenario.aliases?.[docId] || docId;
     const tabs = docScenario.tabs || scenario.tabs || [];
     const rowsForDoc = docScenario.rows || (scenario.doc === docId ? scenario.rows : []);
     const readId = toolUse("mcp__claude_ai_Claude_Docs__read", { ref: { object: "project", id: toolDocId } });
-    if (effectiveMode === "deny") {
+    if (docMode === "deny") {
       toolResult(readId, JSON.stringify({ verdict: "deny", reason: "access" }));
       continue;
     }
@@ -79,17 +81,17 @@ if (effectiveMode !== "no-read" && effectiveMode !== "parse-failure-with-content
       frame: { slug: toolDocId, url: `https://claude.ai/code/artifact/${toolDocId}` },
     }));
     tabs.forEach((tab, index) => {
-      if (effectiveMode === "skip-tab" && index === tabs.length - 1) return;
+      if (docMode === "skip-tab" && index === tabs.length - 1) return;
       let afterSeq = Object.hasOwn(cursorsByDoc[docId] || {}, tab.id) ? cursorsByDoc[docId][tab.id] : 0;
-      if (effectiveMode === "high-after-seq") afterSeq += 1000;
-      if (effectiveMode === "low-after-seq") afterSeq = 0;
+      if (docMode === "high-after-seq") afterSeq += 1000;
+      if (docMode === "low-after-seq") afterSeq = 0;
       const queryInput = {
         object: "utterance",
-        container: { kind: effectiveMode === "wrong-container-kind" ? "file" : "project", id: toolDocId },
+        container: { kind: docMode === "wrong-container-kind" ? "file" : "project", id: toolDocId },
         payload: {
           under: { object: "file", id: tab.id },
           afterSeq,
-          limit: effectiveMode === "wrong-limit" ? 99 : 100,
+          limit: docMode === "wrong-limit" ? 99 : 100,
         },
       };
       const queryId = toolUse("mcp__claude_ai_Claude_Docs__query", queryInput);

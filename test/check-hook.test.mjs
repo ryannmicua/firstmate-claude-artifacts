@@ -26,7 +26,7 @@ test("the pre-tool hook permits configured read and query ids, including an expl
   ]) {
     const result = preTool(tool, input);
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.stdout, "");
+    assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, "allow");
   }
 });
 
@@ -45,4 +45,10 @@ test("the pre-tool hook denies malformed and non-read/query calls", () => {
   const result = preTool("Bash", { command: "cat private" });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, "deny");
+  const missingScope = spawnSync(process.execPath, [HOOK], { input: "{}", encoding: "utf8" });
+  assert.equal(missingScope.status, 0, missingScope.stderr);
+  assert.equal(JSON.parse(missingScope.stdout).hookSpecificOutput.permissionDecision, "deny");
+  const invalidEvent = spawnSync(process.execPath, [HOOK, DOC], { input: "not-json", encoding: "utf8" });
+  assert.equal(invalidEvent.status, 0, invalidEvent.stderr);
+  assert.equal(JSON.parse(invalidEvent.stdout).hookSpecificOutput.permissionDecision, "deny");
 });

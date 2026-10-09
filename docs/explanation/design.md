@@ -27,7 +27,7 @@ The package uses Node.js because the host itself runs on Node.js and puts the No
 
 The check session is a transport, not a judge.
 It runs with no built-in tools, user settings, user hooks, or skills, and only the read-only Claude Docs `read` and `query` tools; the write tools are explicitly denied. Its own per-run settings add the scope hook described below.
-A per-run settings hook checks every tool call before execution, denying all tools other than those two and every document or query container ID outside the source's configured ID list. Both ID forms are allowed only when explicitly grouped in that list.
+A per-run settings hook checks every tool call before execution, explicitly allowing only those two tools and configured document or query container IDs. Both ID forms are allowed only when explicitly grouped in that list. The Docs tools have no broad preapproval, and `dontAsk` denies calls when the hook fails or times out without a decision.
 The adapter then reads the raw tool results from the session's stream-json transcript and builds every row itself.
 A query result counts only when its recorded input names a configured doc and one of its tabs, uses project container kind, sets `afterSeq` exactly to that tab's committed cursor (0 for a new tab), and uses the prescribed limit of 100. A mismatch leaves the tab unchecked, so a confused model can at worst fail the check; it cannot silently skip rows, invent, hide, or reorder them.
 These checks apply to the periodic comment-check session only; a watching worker may read or combine docs according to its own task.
@@ -51,7 +51,7 @@ Comments written in the claude.ai editor carry `via: "frame"` and are always kep
 
 Firstmate restarts an ended poll on its ordinary reconcile cycle, and a poll must finish within the binding's timeout.
 So each poll waits at most `wait` seconds for its source's next scheduled check (`every`), and returns no result if the check is not due by then.
-A check that fails stays quiet until `failures` checks in a row have failed, then becomes an error result the owner sees; a doc that refuses the read is reported at once.
+A check that fails stays quiet until `failures` checks in a row have failed, then becomes an error result the owner sees; a doc that refuses the read is reported at once. If another configured doc has comments to announce in that poll, the result also includes an error for every failed doc. Only successful docs receive pending cursors, so failed docs retain their prior cursors.
 
 ## Automatic replies, tested
 

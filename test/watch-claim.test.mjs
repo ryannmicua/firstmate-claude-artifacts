@@ -40,6 +40,24 @@ test("a relaunch of the same task keeps its claim", () => {
   assert.match(claim(["list"], { FM_HOME: h }).out, new RegExp(`${DOC}\\ttask-a\\tlive`));
 });
 
+test("one claim invocation acquires all supplied page identifiers atomically", () => {
+  const h = home();
+  const acquired = claim(["claim", DOC, SLUG, "--task", "task-a"], { FM_HOME: h });
+  assert.equal(acquired.status, 0);
+  assert.match(acquired.out, new RegExp(`claimed: ${DOC}`));
+  assert.match(acquired.out, new RegExp(`claimed: ${SLUG}`));
+  const claims = claim(["list"], { FM_HOME: h }).out;
+  assert.match(claims, new RegExp(`${DOC}\\ttask-a\\tlive`));
+  assert.match(claims, new RegExp(`${SLUG}\\ttask-a\\tlive`));
+
+  const refused = claim(["claim", DOC, SLUG, "--task", "task-b"], { FM_HOME: h });
+  assert.equal(refused.status, 3);
+  assert.match(refused.out, new RegExp(`${DOC} is held by live task task-a`));
+  assert.match(refused.out, new RegExp(`${SLUG} is held by live task task-a`));
+  assert.match(claim(["list"], { FM_HOME: h }).out, new RegExp(`${DOC}\\ttask-a\\tlive`));
+  assert.match(claim(["list"], { FM_HOME: h }).out, new RegExp(`${SLUG}\\ttask-a\\tlive`));
+});
+
 test("a claim whose task no longer exists is stale and may be taken over", () => {
   const h = home();
   claim(["claim", DOC, "--task", "task-a"], { FM_HOME: h });

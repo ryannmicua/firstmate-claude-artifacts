@@ -33,9 +33,9 @@ if (mode === "hang") {
   await new Promise(() => {});
 }
 
-const table = prompt.match(/or (\d+) for an id that is not in the table: (\{.*\})$/m);
-const fallback = table ? Number(table[1]) : 0;
-const cursors = table ? JSON.parse(table[2]) : {};
+const table = prompt.match(/table: (\{.*\})$/m);
+const cursorsByDoc = table ? JSON.parse(table[1]) : {};
+const requestedDocs = [...prompt.matchAll(/Call mcp__claude_ai_Claude_Docs__read once with ref \{"object":"project","id":"([^\"]+)"\}/g)].map((match) => match[1]);
 let effectiveMode = mode;
 if (mode === "flaky") {
   // Fail the first call in this directory, succeed afterwards.
@@ -62,24 +62,30 @@ const toolResult = (id, text, isError = false) => {
 
 emit({ type: "system", subtype: "init", tools: ["mcp__claude_ai_Claude_Docs__query", "mcp__claude_ai_Claude_Docs__read"], model: "fake" });
 if (effectiveMode !== "no-read" && effectiveMode !== "parse-failure-with-content") {
-  const readId = toolUse("mcp__claude_ai_Claude_Docs__read", { ref: { object: "project", id: scenario.doc } });
-  if (effectiveMode === "deny") {
-    toolResult(readId, JSON.stringify({ verdict: "deny", reason: "access" }));
-  } else {
+  for (const docId of requestedDocs) {
+    const docScenario = scenario.docs?.[docId] || (scenario.doc === docId ? scenario : {});
+    const toolDocId = scenario.aliases?.[docId] || docId;
+    const tabs = docScenario.tabs || scenario.tabs || [];
+    const rowsForDoc = docScenario.rows || (scenario.doc === docId ? scenario.rows : []);
+    const readId = toolUse("mcp__claude_ai_Claude_Docs__read", { ref: { object: "project", id: toolDocId } });
+    if (effectiveMode === "deny") {
+      toolResult(readId, JSON.stringify({ verdict: "deny", reason: "access" }));
+      continue;
+    }
     toolResult(readId, JSON.stringify({
       verdict: "allow",
-      value: { name: scenario.title || "Invented fixture doc", tabs: {} },
-      files: scenario.tabs.map((tab) => ({ id: tab.id, name: tab.name, mime: "application/vnd.claude.page", content: { id: `${tab.id}-body`, kind: "node", engine: "prose" }, engine: "json" })),
-      frame: { slug: scenario.doc, url: `https://claude.ai/code/artifact/${scenario.doc}` },
+      value: { name: docScenario.title || scenario.title || "Invented fixture doc", tabs: {} },
+      files: tabs.map((tab) => ({ id: tab.id, name: tab.name, mime: "application/vnd.claude.page", content: { id: `${tab.id}-body`, kind: "node", engine: "prose" }, engine: "json" })),
+      frame: { slug: toolDocId, url: `https://claude.ai/code/artifact/${toolDocId}` },
     }));
-    scenario.tabs.forEach((tab, index) => {
-      if (effectiveMode === "skip-tab" && index === scenario.tabs.length - 1) return;
-      let afterSeq = Object.hasOwn(cursors, tab.id) ? cursors[tab.id] : fallback;
+    tabs.forEach((tab, index) => {
+      if (effectiveMode === "skip-tab" && index === tabs.length - 1) return;
+      let afterSeq = Object.hasOwn(cursorsByDoc[docId] || {}, tab.id) ? cursorsByDoc[docId][tab.id] : 0;
       if (effectiveMode === "high-after-seq") afterSeq += 1000;
       if (effectiveMode === "low-after-seq") afterSeq = 0;
       const queryInput = {
         object: "utterance",
-        container: { kind: effectiveMode === "wrong-container-kind" ? "file" : "project", id: scenario.doc },
+        container: { kind: effectiveMode === "wrong-container-kind" ? "file" : "project", id: toolDocId },
         payload: {
           under: { object: "file", id: tab.id },
           afterSeq,
@@ -87,9 +93,9 @@ if (effectiveMode !== "no-read" && effectiveMode !== "parse-failure-with-content
         },
       };
       const queryId = toolUse("mcp__claude_ai_Claude_Docs__query", queryInput);
-      let rows = scenario.rows.filter((row) => row.tab === tab.id && row.seq > afterSeq).map(({ tab: _tab, ...row }) => row);
+      let rows = rowsForDoc.filter((row) => row.tab === tab.id && row.seq > afterSeq).map(({ tab: _tab, ...row }) => row);
       let truncated = false;
-      const maxRows = Math.min(queryInput.payload.limit, scenario.truncate || Number.MAX_SAFE_INTEGER);
+      const maxRows = Math.min(queryInput.payload.limit, docScenario.truncate || scenario.truncate || Number.MAX_SAFE_INTEGER);
       if (rows.length > maxRows) {
         rows = rows.slice(0, maxRows);
         truncated = true;

@@ -35,10 +35,10 @@ For a configured remote secondmate, keep the staged package on the controller an
 
 ```sh
 bin/fm-procevent.sh register-extension claude-doc-comments <source-id> \
-  --config-ref 'doc:<doc-id>[?setting=value&...]'
+  --config-ref 'doc:<doc-id>[~<alias-id>][,<related-doc-id>...][?setting=value&...]'
 ```
 
-`<doc-id>` is the last path segment of the doc's `https://claude.ai/code/artifact/<doc-id>` link.
+Each doc id is the last path segment of its `https://claude.ai/code/artifact/<doc-id>` link. Use `~` to configure both IDs for the same doc; use commas to include several related docs in the source. The periodic check can read only the IDs configured for that source.
 Check a reference offline before registering:
 
 ```sh

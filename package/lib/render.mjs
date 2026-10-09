@@ -137,6 +137,49 @@ export function buildResult({ sourceId, requestId, doc, parsed, cursorsBefore, f
   return { output, cursorsAfter: cursors, announced: true, more };
 }
 
+export function combineResults(results) {
+  const entries = results.map(({ docId, built }) => {
+    const value = JSON.parse(built.output);
+    return {
+      doc_id: docId,
+      built,
+      value: {
+        doc: value.doc,
+        cursors: value.cursors,
+        more: value.more,
+        unchecked_tabs: value.unchecked_tabs,
+        omitted: value.omitted,
+        rows: value.rows,
+      },
+    };
+  });
+  if (entries.length === 1) return { output: entries[0].built.output, included: [entries[0].doc_id] };
+
+  const first = JSON.parse(results[0].built.output);
+  const render = (included) => JSON.stringify({
+    notice: NOTICE,
+    schema: RESULT_SCHEMA,
+    source_id: first.source_id,
+    request_id: first.request_id,
+    checked_at: first.checked_at,
+    documents: included.map((entry) => entry.value),
+    more: included.length < entries.length || included.some((entry) => entry.value.more),
+  }, null, 2);
+
+  let included = entries;
+  let output = render(included);
+  while (included.length > 1 && (Buffer.byteLength(output) > MAX_OUTPUT_BYTES || Buffer.byteLength(JSON.stringify(output)) > MAX_ESCAPED_BYTES)) {
+    included = included.slice(0, -1);
+    output = render(included);
+  }
+  if (included.length === 1 && entries.length > 1) {
+    const value = JSON.parse(included[0].built.output);
+    value.more = true;
+    output = JSON.stringify(value, null, 2);
+  }
+  return { output, included: included.map((entry) => entry.doc_id) };
+}
+
 // Parse a captured result back. Returns the object or null.
 export function parseResult(content) {
   if (typeof content !== "string" || content.length === 0) return null;
@@ -145,4 +188,9 @@ export function parseResult(content) {
     if (value && value.schema === RESULT_SCHEMA && typeof value.source_id === "string" && typeof value.request_id === "string") return value;
   } catch {}
   return null;
+}
+
+export function resultHasRows(result) {
+  if (Array.isArray(result?.rows)) return result.rows.length > 0;
+  return Array.isArray(result?.documents) && result.documents.some((doc) => Array.isArray(doc.rows) && doc.rows.length > 0);
 }

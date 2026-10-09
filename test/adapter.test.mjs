@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { DOC, invokeRequest, poll, resultOp, rid, row, run, sandbox, TAB1, TAB2 } from "./helpers.mjs";
+import { DOC, DOC2, DOC_ALIAS, invokeRequest, poll, resultOp, rid, row, run, sandbox, TAB1, TAB2, TAB3 } from "./helpers.mjs";
 
 function announced(out) {
   assert.equal(out.status, 0, out.stderr);
@@ -55,6 +55,13 @@ test("the check session is locked down and its prompt marks tool output untruste
   assert.equal(value("--output-format"), "stream-json");
   assert.equal(value("--tools"), "");
   assert.equal(value("--setting-sources"), "");
+  const settings = JSON.parse(value("--settings"));
+  const hook = settings.hooks.PreToolUse[0];
+  assert.equal(hook.matcher, "*");
+  assert.equal(hook.hooks[0].type, "command");
+  assert.equal(hook.hooks[0].command, process.execPath);
+  assert.ok(hook.hooks[0].args[0].endsWith("/package/bin/check-tool-scope.mjs"));
+  assert.deepEqual(hook.hooks[0].args.slice(1), [DOC]);
   assert.equal(value("--allowedTools"), "mcp__claude_ai_Claude_Docs__read,mcp__claude_ai_Claude_Docs__query");
   for (const tool of ["batch", "create", "update", "delete", "export", "guide"]) {
     assert.match(value("--disallowedTools"), new RegExp(`mcp__claude_ai_Claude_Docs__${tool}`));
@@ -169,6 +176,46 @@ test("cursors are durable per source and per doc and survive new processes", () 
   silent(poll(box, rid("2")));
   assert.deepEqual(box.readState().cursors, { [TAB1]: 5, [TAB2]: 7 });
   assert.equal(box.stateFiles().length, 1);
+});
+
+test("a multi-doc source checks each doc and commits each cursor independently", () => {
+  const first = row(TAB1, 5, "first doc comment");
+  const second = row(TAB3, 8, "second doc comment");
+  const box = sandbox({
+    aliases: { [DOC]: DOC_ALIAS },
+    docs: {
+      [DOC]: { title: "First doc", tabs: [{ id: TAB1, name: "Plan" }], rows: [first] },
+      [DOC2]: { title: "Second doc", tabs: [{ id: TAB3, name: "Notes" }], rows: [second] },
+    },
+  });
+  const out = poll(box, rid("1"), "", `${DOC}~${DOC_ALIAS},${DOC2}`);
+  const result = announced(out);
+  assert.deepEqual(result.documents.map((item) => item.doc.id), [DOC, DOC2]);
+  assert.deepEqual(result.documents.map((item) => item.rows[0].body), ["first doc comment", "second doc comment"]);
+  assert.equal(box.calls().length, 1);
+  const settings = JSON.parse(box.calls()[0].argv[box.calls()[0].argv.indexOf("--settings") + 1]);
+  assert.deepEqual(settings.hooks.PreToolUse[0].hooks[0].args.slice(1), [DOC, DOC_ALIAS, DOC2]);
+  assert.equal(box.stateFiles().length, 2);
+  assert.ok(box.readStates().every((state) => state.pending?.output === out.json.result.output));
+
+  resultOp(box, "result.terminal", out.json.result.output);
+  assert.deepEqual(box.readState(DOC).cursors, { [TAB1]: 5 });
+  assert.deepEqual(box.readState(DOC2).cursors, { [TAB3]: 8 });
+  assert.ok(box.readStates().every((state) => state.pending === null));
+
+  box.setScenario({
+    aliases: { [DOC]: DOC_ALIAS },
+    docs: {
+      [DOC]: { title: "First doc", tabs: [{ id: TAB1, name: "Plan" }], rows: [first, row(TAB1, 9, "first newer comment")] },
+      [DOC2]: { title: "Second doc", tabs: [{ id: TAB3, name: "Notes" }], rows: [second, row(TAB3, 12, "second newer comment")] },
+    },
+  });
+  box.makeDue();
+  const newer = announced(poll(box, rid("2"), "", `${DOC}~${DOC_ALIAS},${DOC2}`));
+  assert.deepEqual(newer.documents.map((item) => item.rows.map((comment) => comment.body)), [
+    ["first newer comment"],
+    ["second newer comment"],
+  ]);
 });
 
 test("a tab added later starts from zero", () => {

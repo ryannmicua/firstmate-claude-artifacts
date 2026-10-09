@@ -6,15 +6,22 @@ import path from "node:path";
 import { test } from "node:test";
 import { CheckError, parseToolJson, runClaude } from "../package/lib/check.mjs";
 import { ConfigError, DEFAULTS, parseConfigRef } from "../package/lib/config.mjs";
-import { DOC, tempDir } from "./helpers.mjs";
+import { DOC, DOC2, DOC_ALIAS, tempDir } from "./helpers.mjs";
 
 test("a bare doc reference takes every default", () => {
-  assert.deepEqual(parseConfigRef(`doc:${DOC}`), { doc: DOC, ...DEFAULTS });
+  assert.deepEqual(parseConfigRef(`doc:${DOC}`), { docs: [{ id: DOC, aliases: [DOC] }], ...DEFAULTS });
   assert.equal(DEFAULTS.model, "claude-haiku-5-5");
 });
 
 test("the 22-character artifact id form is accepted", () => {
-  assert.equal(parseConfigRef("doc:AbCdEfGhIjKlMnOpQrStUv").doc, "AbCdEfGhIjKlMnOpQrStUv");
+  assert.deepEqual(parseConfigRef("doc:AbCdEfGhIjKlMnOpQrStUv").docs, [{ id: "AbCdEfGhIjKlMnOpQrStUv", aliases: ["AbCdEfGhIjKlMnOpQrStUv"] }]);
+});
+
+test("a source accepts several docs and explicit id aliases", () => {
+  assert.deepEqual(parseConfigRef(`doc:${DOC}~${DOC_ALIAS},${DOC2}`).docs, [
+    { id: DOC, aliases: [DOC, DOC_ALIAS] },
+    { id: DOC2, aliases: [DOC2] },
+  ]);
 });
 
 test("settings are parsed and bounded", () => {
@@ -32,6 +39,7 @@ for (const bad of [
   "",
   "file:/tmp/x",
   "doc:",
+  "doc:,,",
   "doc:../../etc",
   `doc:${DOC}?every=5`,
   `doc:${DOC}?every=abc`,
@@ -48,6 +56,9 @@ for (const bad of [
   `doc:${DOC}?every`,
   `doc:${DOC}?a=1?b=2`,
   `doc:${DOC}?claude=/${"x".repeat(600)}`,
+  `doc:${DOC}~bad`,
+  `doc:${DOC},${DOC}`,
+  `doc:${DOC}~${DOC_ALIAS},${DOC_ALIAS}`,
 ]) {
   test(`config_ref ${JSON.stringify(bad.slice(0, 60))} is refused`, () => {
     assert.throws(() => parseConfigRef(bad), ConfigError);

@@ -4,7 +4,7 @@ A [Firstmate](https://github.com/kunchenguid/firstmate) add-on that lets Claude 
 It installs and upgrades separately from any Firstmate home.
 
 - **Comment check** (`package/`): a trusted external process-event adapter, `claude-doc-comments`.
-  On a configurable cadence it runs one short, read-only `claude -p` session on a low-cost model (default `claude-haiku-5-5`) that reads a Claude Doc's comments newer than a durable cursor.
+  On a configurable cadence it runs one short, read-only `claude -p` session on a low-cost model (default `claude-haiku-5-5`) that reads configured Claude Docs' comments, each with its own durable cursor.
   New comments from people become one announced result for the owning agent; an empty check wakes no one.
 - **Watcher skill** (`skills/claude-artifact-watcher/`): a Claude Code skill for a Firstmate worker that watches one page or doc, claims it, catches up on start, re-reads on a timer, answers within its brief, and relays decisions to Firstmate.
   It ships `watch-claim.mjs`, advisory per-page watch claims for one Firstmate home.

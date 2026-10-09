@@ -1,8 +1,8 @@
 // Source configuration reference parsing.
 //
-// A source configuration reference names one Claude Doc and optional settings:
+// A source configuration reference names one or more Claude Docs and optional settings:
 //
-//   doc:<doc-id>[?key=value[&key=value...]]
+//   doc:<doc-id>[~<alias-id>][,<doc-id>[~<alias-id>...]][?key=value[&key=value...]]
 //
 // It is stored in Firstmate's private registration and sent in every request,
 // so it must stay non-secret and at most 512 bytes. Every value is validated
@@ -33,6 +33,10 @@ const KEYS = new Set(Object.keys(DEFAULTS));
 
 export class ConfigError extends Error {}
 
+export function isDocId(value) {
+  return typeof value === "string" && DOC_ID.test(value);
+}
+
 function integer(key, raw) {
   if (!/^[0-9]{1,6}$/.test(raw)) throw new ConfigError(`${key} must be a whole number of seconds`);
   const value = Number(raw);
@@ -45,10 +49,18 @@ export function parseConfigRef(reference) {
   if (typeof reference !== "string" || reference.length === 0) throw new ConfigError("config_ref must be a non-empty string");
   if (Buffer.byteLength(reference, "utf8") > 512) throw new ConfigError("config_ref must be at most 512 bytes");
   if (!reference.startsWith("doc:")) throw new ConfigError("config_ref must start with doc:");
-  const [docPart, query = "", ...extra] = reference.slice(4).split("?");
+  const [docsPart, query = "", ...extra] = reference.slice(4).split("?");
   if (extra.length > 0) throw new ConfigError("config_ref has more than one ?");
-  if (!DOC_ID.test(docPart)) throw new ConfigError("doc id must be a Claude Doc UUID or 22-character artifact id");
-  const config = { doc: docPart, ...DEFAULTS };
+  const docs = docsPart.split(",").map((group) => {
+    const ids = group.split("~");
+    if (ids.length > 2 || ids.some((id) => !isDocId(id))) {
+      throw new ConfigError("each doc must use a UUID or 22-character artifact id, optionally followed by ~<alias-id>");
+    }
+    return { id: ids[0], aliases: ids };
+  });
+  const allIds = docs.flatMap((doc) => doc.aliases);
+  if (new Set(allIds).size !== allIds.length) throw new ConfigError("doc ids and aliases must be unique");
+  const config = { docs, ...DEFAULTS };
   const seen = new Set();
   if (query !== "") {
     for (const pair of query.split("&")) {

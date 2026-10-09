@@ -12,7 +12,7 @@ const HELP = `claude-doc-comments ${EXTENSION_VERSION} (${EXTENSION_ID})
 
 Firstmate trusted external process-event adapter "${ADAPTER}". Each poll runs
 one short, read-only \`claude -p\` session on a low-cost model that reads the
-comment rows of one Claude Doc newer than a durable per-source cursor. New
+comment rows of configured Claude Docs newer than their durable cursors. New
 comments become one announced result for the owning agent; an empty check
 returns no result and wakes nobody. Comment text is untrusted data in both
 the check session's prompt and the result.
@@ -24,10 +24,11 @@ Usage:
   claude-doc-comments --help | --version
 
 Source configuration reference (register-extension --config-ref):
-  doc:<doc-id>[?key=value&key=value...]
+  doc:<doc-id>[~<alias-id>][,<doc-id>[~<alias-id>...]...][?key=value&key=value...]
 
-  <doc-id> is the Claude Doc's UUID or 22-character artifact id: the last
-  path segment of its https://claude.ai/code/artifact/... link.
+  Each doc id is a Claude Doc UUID or 22-character artifact id: the last path
+  segment of its https://claude.ai/code/artifact/... link. Add ~<alias-id>
+  when the same doc has another ID form, and commas to watch several docs.
 
   key       default             meaning
   model     ${DEFAULTS.model.padEnd(19)} model for the check session

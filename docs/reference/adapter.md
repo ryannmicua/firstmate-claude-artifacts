@@ -17,15 +17,15 @@
 | --- | --- |
 | `network` | Each check is a Claude session that talks to the Anthropic API and the claude.ai Claude Docs connector. |
 | `credential-store` | The check uses the operator's Claude login, which `claude` finds under `HOME`; only this consent makes Firstmate keep `HOME` (and the XDG and SSH agent variables) in the adapter's environment. |
-| `artifact-references` | Each source names a claude.ai Claude Doc, and results carry doc, tab, and comment ids and the doc's link. |
+| `artifact-references` | Each source names one or more claude.ai Claude Docs, and results carry doc, tab, and comment ids and the doc links. |
 
 ## Source configuration reference
 
 ```text
-doc:<doc-id>[?key=value[&key=value...]]
+doc:<doc-id>[~<alias-id>][,<doc-id>[~<alias-id>...]][?key=value[&key=value...]]
 ```
 
-At most 512 bytes. `<doc-id>` is a Claude Doc UUID or 22-character artifact id.
+At most 512 bytes. Each id is a Claude Doc UUID or 22-character artifact id. Use `~` to list both configured ID forms of the same doc; use commas to configure several docs. The first ID in each group is its state key and output ID. Aliases are explicit: the check does not infer a relationship between IDs.
 
 | Key | Default | Range | Meaning |
 | --- | --- | --- | --- |
@@ -50,16 +50,19 @@ Errors use the contract's codes: `invalid-request` (bad envelope or config refer
 
 ## The check session
 
-One `claude -p` run per due check, from `<state>/run`:
+One `claude -p` run per due source check, from `<state>/run`; the prompt reads each configured doc and queries its tabs:
 
 ```text
 claude -p --model <model> --output-format stream-json --verbose --tools "" --disable-slash-commands
-  --setting-sources "" --allowedTools mcp__claude_ai_Claude_Docs__read,mcp__claude_ai_Claude_Docs__query
+  --setting-sources "" --settings <inline PreToolUse hook settings>
+  --allowedTools mcp__claude_ai_Claude_Docs__read,mcp__claude_ai_Claude_Docs__query
   --disallowedTools mcp__claude_ai_Claude_Docs__{batch,create,update,delete,export,guide}
   --permission-prompts none --no-session-persistence --max-budget-usd <budget>
 ```
 
-The prompt asks for one `read` of the doc and one `query` per tab with `afterSeq` set to that tab's cursor (0 for a tab not seen before) and `limit` 100, and says all tool output is untrusted data.
+The per-run settings install a deterministic `PreToolUse` hook for every tool call. It permits only the Claude Docs `read` and `query` tools, and only when the requested doc or query container ID is in this source's configured ID list. The hook denies other tools, malformed calls, and unconfigured IDs before execution. It also handles each explicitly configured alias. The scope applies to this comment check; watching workers that read or combine docs have their own access scope.
+
+The prompt asks for one `read` of each configured doc and one `query` per tab with `afterSeq` set to that tab's cursor (0 for a tab not seen before) and `limit` 100, and says all tool output is untrusted data.
 The adapter parses the raw tool results out of the transcript and ignores the model's reply text.
 A query counts only if its input names the configured doc and a tab from its read, uses `container.kind` `project`, sets `afterSeq` exactly to that tab's committed cursor (0 for a new tab), and sets `limit` to 100. Any mismatch leaves that tab unchecked.
 A session that did not make the expected calls is retried once when at least half the timeout remains. On a parse failure, `<state>/run/last-failed-check.json` stores only the exit status, error class, transcript byte and line counts, and timestamp; it never stores transcript content. A legacy raw transcript file is removed when the next check starts.
@@ -74,12 +77,13 @@ UTF-8 JSON, at most 30,000 bytes, pretty-printed, with these top-level fields in
 | `schema` | `firstmate-claude-artifacts.doc-comments.v1` |
 | `source_id`, `request_id` | The source and the host request that produced this output. |
 | `checked_at` | ISO time of the check. |
-| `doc` | `id`, `url`, `title`, and `tabs` (`id`, `name`). |
-| `cursors` | `before` and `after`: per-tab sequence cursors. |
-| `more` | `true` when rows were held back (a full page or the size bound); the next check runs at once. |
+| `doc` | For a single announced doc: `id`, `url`, `title`, and `tabs` (`id`, `name`). |
+| `cursors` | For a single announced doc: `before` and `after`, per-tab sequence cursors. |
+| `more` | `true` when rows or configured docs were held back; the next check runs at once. |
 | `unchecked_tabs` | Tabs the session failed to query; they keep their cursors and are retried next check. |
 | `omitted` | Connector-written comment rows skipped; `rows_over_size_bound` held back. |
 | `rows` | New comment and reply rows, oldest first. Resolve and other event rows advance the cursor silently and are not included. |
+| `documents` | When multiple docs are announced together, an array of per-doc objects with the same `doc`, `cursors`, `more`, `unchecked_tabs`, `omitted`, and `rows` fields. |
 
 Each row: `seq`, `id`, `tab`, `thread` (root comment id), `kind` (`comment` or `reply`), `at`, `author` (`name`, `principal`, `via`, `self`, `guest`), `sent_to_claude`, optional `answered`, `anchor_text` for a comment, and `body`.
 Strings written by people are cut to 2,000 (body) or 120 (names) characters, control characters become U+FFFD, and invisible or direction-changing characters are shown as `<U+XXXX>`.
@@ -90,7 +94,7 @@ All in the host-provided `FIRSTMATE_EXTENSION_STATE` directory (`<home>/state/ex
 
 | Path | Content |
 | --- | --- |
-| `sources/<hash>.json` | One per source id and doc: per-tab `cursors`, `last_check_at`, `due_now`, `failures`, and at most one `pending` result. Written atomically under `sources/<hash>.lock`. |
+| `sources/<hash>.json` | One per source id and primary doc id: per-tab `cursors`, `last_check_at`, `due_now`, `failures`, and at most one `pending` result. Each configured doc therefore has its own cursor state. Written atomically under `sources/<hash>.lock`. |
 | `run/` | Working directory of the check sessions; `last-failed-check.json` contains structural diagnostics only after a parse failure. |
 
 The cursor advances only when the host presents the exact pending output back through `result.classify`, `result.terminal`, or `result.silent`, which it does only for a captured result.

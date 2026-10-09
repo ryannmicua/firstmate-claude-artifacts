@@ -26,15 +26,17 @@ The package uses Node.js because the host itself runs on Node.js and puts the No
 ## Trusting the model as little as possible
 
 The check session is a transport, not a judge.
-It runs with no built-in tools, no user settings or hooks, no skills, and only the read-only Claude Docs `read` and `query` tools; the write tools are explicitly denied.
-The adapter reads the raw tool results from the session's stream-json transcript and builds every row itself.
-A query result counts only when its recorded input names the configured doc and one of its tabs, uses project container kind, sets `afterSeq` exactly to that tab's committed cursor (0 for a new tab), and uses the prescribed limit of 100. A mismatch leaves the tab unchecked, so a confused model can at worst fail the check; it cannot silently skip rows, invent, hide, or reorder them.
+It runs with no built-in tools, user settings, user hooks, or skills, and only the read-only Claude Docs `read` and `query` tools; the write tools are explicitly denied. Its own per-run settings add the scope hook described below.
+A per-run settings hook checks every tool call before execution, denying all tools other than those two and every document or query container ID outside the source's configured ID list. Both ID forms are allowed only when explicitly grouped in that list.
+The adapter then reads the raw tool results from the session's stream-json transcript and builds every row itself.
+A query result counts only when its recorded input names a configured doc and one of its tabs, uses project container kind, sets `afterSeq` exactly to that tab's committed cursor (0 for a new tab), and uses the prescribed limit of 100. A mismatch leaves the tab unchecked, so a confused model can at worst fail the check; it cannot silently skip rows, invent, hide, or reorder them.
+These checks apply to the periodic comment-check session only; a watching worker may read or combine docs according to its own task.
 
 Comment text is untrusted twice over: the session's prompt says so, and the result presents it as JSON string data under a fixed notice, with control characters replaced and invisible or direction-changing characters made visible.
 
 ## At least once, never silently lost
 
-Each tab has a durable cursor: the highest comment sequence number already delivered.
+Each configured doc has its own durable state file, and each tab has a durable cursor: the highest comment sequence number already delivered.
 A poll that finds new rows stores its exact output as pending, keyed by Firstmate's request id, and returns it.
 Firstmate retries a poll that it could not capture with the same request id, and the adapter replays the pending output without another check.
 After capture, Firstmate asks the adapter whether the result is silent and whether it ends the source, presenting the captured output back; only that exact output advances the cursor.

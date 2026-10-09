@@ -12,8 +12,11 @@ export const ENTRY = path.join(ROOT, "package", "bin", "claude-doc-comments");
 export const EXTENSION_ID = "io.github.ryannmicua.firstmate-claude-artifacts";
 export const VERSION = JSON.parse(readFileSync(path.join(ROOT, "package", "firstmate-extension.json"), "utf8")).version;
 export const DOC = "123e4567-e89b-42d3-a456-426614174000";
+export const DOC2 = "AbCdEfGhIjKlMnOpQrStUv";
+export const DOC_ALIAS = "ZyXwVuTsRqPoNmLkJiHgFe";
 export const TAB1 = "aaaa1111-0001";
 export const TAB2 = "bbbb2222-0002";
+export const TAB3 = "cccc3333-0003";
 
 export function rid(ch) {
   return `sha256:${ch.repeat(64)}`;
@@ -73,10 +76,15 @@ export function sandbox(scenario = {}) {
       if (!existsSync(dirPath)) return [];
       return readdirSync(dirPath).filter((name) => name.endsWith(".json")).map((name) => path.join(dirPath, name));
     },
-    readState() {
+    readState(doc = DOC) {
       const files = box.stateFiles();
-      if (files.length !== 1) throw new Error(`expected one state file, found ${files.length}`);
-      return JSON.parse(readFileSync(files[0], "utf8"));
+      const states = files.map((file) => JSON.parse(readFileSync(file, "utf8")));
+      const stateValue = states.find((state) => state.doc === doc);
+      if (!stateValue) throw new Error(`no state file for ${doc}; found ${states.length}`);
+      return stateValue;
+    },
+    readStates() {
+      return box.stateFiles().map((file) => JSON.parse(readFileSync(file, "utf8")));
     },
     // Make the next poll due now, as if the cadence interval had passed.
     makeDue() {
@@ -86,8 +94,8 @@ export function sandbox(scenario = {}) {
         writeFileSync(file, JSON.stringify(value));
       }
     },
-    configRef(extra = "") {
-      return `doc:${DOC}?wait=0&claude=${claude}${extra}`;
+    configRef(extra = "", docs = DOC) {
+      return `doc:${docs}?wait=0&claude=${claude}${extra}`;
     },
   };
   box.setScenario(scenario);
@@ -138,8 +146,8 @@ export function invokeRequest(operation, input, overrides = {}) {
   };
 }
 
-export function poll(box, requestId, extraConfig = "") {
-  return run("invoke", invokeRequest("source.poll", { source_id: "picnic-review", config_ref: box.configRef(extraConfig) }, { request_id: requestId }), {
+export function poll(box, requestId, extraConfig = "", docs = DOC) {
+  return run("invoke", invokeRequest("source.poll", { source_id: "picnic-review", config_ref: box.configRef(extraConfig, docs) }, { request_id: requestId }), {
     env: { FIRSTMATE_EXTENSION_STATE: box.state },
   });
 }

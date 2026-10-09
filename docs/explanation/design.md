@@ -85,6 +85,7 @@ A claim stored on the page itself would bind more parties and is a follow-up.
 
 - Plain artifact pages are not covered by the periodic check; print-mode sessions lack the artifact comments tool.
 - `CLAUDE_CODE_ARTIFACT_COMMENTS_AUTOREACT` is undocumented; if a release drops it, the skill's start check still verifies the watch listing shows no "auto-replies armed".
-- Firstmate cannot set an environment variable for one task; the variable is set for every worker of a home.
+- The [launch guide](../how-to/launch-a-watching-worker.md#steps) documents worker launch configuration for automatic replies.
+- The [watcher skill](../../skills/claude-artifact-watcher/SKILL.md) documents the Claude Doc paired-ID claim window and the reply-identification rules.
 - Firstmate does not call `watch-claim.mjs release-task` at teardown; stale-claim takeover covers it, and an explicit cleanup hook would need a Firstmate change.
 - The origin of the observed automatic doc reply is unknown.

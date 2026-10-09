@@ -10,13 +10,23 @@ The worker is always a Claude Code worker, dedicated to one page.
 
 ## Steps
 
-For Claude Docs, resolve the page's identifiers before activating its watch. Have the worker read the Doc UUID with Claude Docs first and claim the UUID plus any paired 22-character ID explicitly returned by the read in one command. If the read does not expose the paired ID, the worker claims the UUID first and attaches the newly listed ID immediately after activation, before reading comments. That unresolved-ID interval is the only overlap window; a collision requires stopping the watch and releasing the task's claims. A new artifact has no ID until publish returns its URL, so claim that ID as soon as it is available and before requesting the watch.
+The [watcher skill's startup procedure](../../skills/claude-artifact-watcher/SKILL.md#start-and-again-after-every-relaunch) covers page-ID claims, including the Claude Doc paired ID that first appears in the watch result and the brief claim window that follows.
 
 1. **Launch the worker with automatic replies off.**
    Its environment must contain `CLAUDE_CODE_ARTIFACT_COMMENTS_AUTOREACT=0`.
    Firstmate's `bin/fm-spawn.sh` has no per-task environment values; a worker inherits the launching environment, filtered by `config/launch-env-allowlist` when that file exists.
-   So export the variable in the environment of the Firstmate session that launches workers, and if the home has `config/launch-env-allowlist`, add the line `CLAUDE_CODE_ARTIFACT_COMMENTS_AUTOREACT` to it.
-   This turns automatic artifact comment replies off for every Claude worker of that home, which matches "no automatic replies unless asked".
+   Choose one route:
+   - **Home-wide:** export the variable in the environment of the Firstmate session that launches workers, and if the home has `config/launch-env-allowlist`, add the line `CLAUDE_CODE_ARTIFACT_COMMENTS_AUTOREACT` to it.
+     This turns automatic artifact comment replies off for every Claude worker of that home, which matches "no automatic replies unless asked".
+   - **One worker:** before launching, write an untracked `<worktree>/.claude/settings.json` in the worker's worktree containing:
+
+     ```json
+     {"env":{"CLAUDE_CODE_ARTIFACT_COMMENTS_AUTOREACT":"0"}}
+     ```
+
+     If the project already tracks a `.claude/settings.json`, merge the `env` entry into the worktree's copy instead and do not commit it.
+     Do not use `<worktree>/.claude/settings.local.json`: Firstmate rewrites that file at every launch, so an `env` entry there does not survive.
+
    The skill checks the variable on start and reports `blocked` if it is missing.
 2. **Write the brief.**
    Name the page, what the worker may change on it, which decisions it may make, the re-read interval if not five minutes, and the status file and line format it reports with.
@@ -28,6 +38,10 @@ For Claude Docs, resolve the page's identifiers before activating its watch. Hav
 5. **Answer what it relays.**
    Decisions and out-of-scope asks arrive as `needs-decision [key=comment-<thread id>]` lines; reply in the worker's inbox as for any other task.
 6. **End the review** by telling the worker it is over; it deletes its timer, releases its claim, and reports `done`.
+
+## Tell the worker's replies apart
+
+The [watcher skill](../../skills/claude-artifact-watcher/SKILL.md#reading-threads) defines the visible reply marker and how to identify connector-written Claude Doc comments.
 
 ## Check who watches which page
 

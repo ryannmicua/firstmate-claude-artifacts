@@ -26,7 +26,8 @@ Usage errors exit 2; other errors exit 1.
 
 - A task is live while `<state>/<task>.meta` exists; Firstmate removes that record at task teardown.
 - One claim file per page identifier: `<state>/fca-watch-claims/<key>.json`, mode 0600, holding `schema`, `page`, `task`, `claimed_at`. A page known by two identifiers needs both identifiers claimed; one `claim` invocation takes all of them atomically.
-- Resolve aliases before activation when possible, then pass every known identifier to the same `claim` invocation, for example `claim <Claude Doc UUID> <22-character artifact id>`. If the watch exposes an ID that could not be resolved earlier, attach it immediately with both IDs; if another live task holds either ID, stop the watch and release this task's claims before handling comments.
+- If a watch result exposes an identifier after activation, claim it together with all already claimed IDs before handling comments; if another live task holds any identifier, stop the watch and release this task's claims.
+- For the watcher-specific Claude Doc paired-ID timing and claim sequence, see the [watcher startup procedure](../../skills/claude-artifact-watcher/SKILL.md#start-and-again-after-every-relaunch).
 - Mutations are serialized by `<state>/fca-watch-claims/.lock`, a directory holding the locking process id; a lock whose process is gone is removed.
 - An unreadable claim file counts as stale.
 - Claims are local to one home and advisory: only sessions that run this tool honor them.

@@ -68,7 +68,14 @@ The per-source cursors live in the home's extension state, keyed by extension id
 3. Retire the binding: `bin/fm-extension.sh retire-binding io.github.ryannmicua.firstmate-claude-artifacts --if-binding-digest <binding-digest>`.
    For a remote secondmate, use `fm-extension.sh retire-transfer` with both the transfer and binding digests that `remote-bind` printed.
 
-Retirement keeps the content-addressed installed copy and the extension state (cursors and structural check diagnostics) in the home; delete `state/extensions/io.github.ryannmicua.firstmate-claude-artifacts/` yourself only if you never want that state back.
+Retirement leaves these in the home:
+
+- the content-addressed installed copy;
+- the extension state (cursors and structural check diagnostics) under `state/extensions/io.github.ryannmicua.firstmate-claude-artifacts/`; delete it yourself only if you never want that state back;
+- each retired source's launch records, `state/procevent/<source-id>.*.last-launch`;
+- each retired source's handled results, `state/procevent-inbox/<source-id>.<n>.*`.
+
+Firstmate owns the launch records and handled results; leave them to Firstmate's own procevent tooling rather than deleting them by hand.
 
 ## Install the watcher skill
 
